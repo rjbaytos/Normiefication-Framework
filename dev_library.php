@@ -5455,7 +5455,8 @@ SCRIPT
 		$request_keys = '';
 		
 		// USE REQUEST KEYS WHEN DISPLAYING ALL ZIP CONTENT
-		if ( $display_all ) $request_keys = "$start_key, $end_key";
+		if ( $display_all && !TASK::IS_EMPTY ( $start_key, $end_key ) )
+			$request_keys = "$start_key, $end_key";
 		
 		// READ THE CONTENT(S) OF ZIP FILE
 		$zipFolder = $task ( 'ZIPLIST', $request_keys, [$fn, true] );
@@ -6399,9 +6400,15 @@ div.media-container a:visited,
 div.media-container a:hover,
 div.media-container a:active {
 	text-decoration:			none;
-	color:						#FFFFFF;
 	font-weight:				bold;
 	text-shadow:				1px 1px 2px #000000;
+}
+
+div.media-container a:link,
+div.media-container a:visited,
+div.media-container a:hover,
+div.media-container a:active {
+	color:						#AAB7B8;
 }
 
 div.container div.filename,
@@ -6414,7 +6421,7 @@ div.media-container div.filename {
 div.audio-container {
 	display:					inline-block;
 	background-color:			#0F0F0F;
-	box-shadow:					1px 1px 4px darkred;
+	box-shadow:					1px 1px 4px #0F0F0F;
 	border-radius:				10px;
 	border:						1px solid #1F1F1F;
 	overflow:					hidden;
