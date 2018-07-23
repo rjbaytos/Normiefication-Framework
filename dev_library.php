@@ -2313,6 +2313,139 @@ CLASS TASK
 	}
 	
 	/*///------------------------------------------------------------------------
+			>>> CHECK IF FILE IS A SHORTCUT
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION IS_SHORTCUT
+	(
+			string $url	// FILE ADDRESS/LOCATION
+	): BOOL
+	{
+		$ext = strtolower ( pathinfo ( $url, PATHINFO_EXTENSION ) );
+		if ( !file_exists ( $url ) || $ext != 'lnk' ) return false;
+		
+		if ( is_link ( $url ) || SELF::IS_WINDOWS_LINK ( $url ) )
+		{
+			return true;
+		}
+		
+		return false;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> RETURN SHORTCUT TARGET LOCATION
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION READ_SHORTCUT
+	(
+			string $url	// FILE ADDRESS/LOCATION
+	): STRING
+	{
+		$ext = strtolower ( pathinfo ( $url, PATHINFO_EXTENSION ) );
+		if ( !file_exists ( $url ) || $ext != 'lnk' ) return '';
+		
+		if ( is_link ( $url ) )
+		{
+			return readlink ( $url );
+		}
+		else if ( SELF::IS_WINDOWS_LINK ( $url ) )
+		{
+			return SELF::READ_WINDOWS_LINK ( $url );
+		}
+		
+		return '';
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> CHECK IF FILE IS A WINDOWS LINK/SHORTCUT
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION IS_WINDOWS_LINK
+	(
+			string $url	// FILE ADDRESS/LOCATION
+	): BOOL
+	{
+		$ext = strtolower ( pathinfo ( $url, PATHINFO_EXTENSION ) );
+		if ( !file_exists ( $url ) || $ext != 'lnk' ) return false;
+		$bin = file_get_contents ( $url, 2048 );
+		return substr ( $bin, 0, 20 ) ==	"L\000\000\000\001\024\002\000\000\000".
+											"\000\000\300\000\000\000\000\000\000F";
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> READ WINDOWS LINK/SHORTCUT TARGET LOCATION
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION READ_WINDOWS_LINK
+	(
+			string $url	// FILE ADDRESS/LOCATION
+	): STRING
+	{
+		$ext = strtolower ( pathinfo ( $url, PATHINFO_EXTENSION ) );
+		if ( !file_exists ( $url ) || $ext != 'lnk' ) return '';
+		return SELF::ARRAY_KEY ( SELF::LINK_INFO ( $url ), 'path', '' );
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> READ WINDOWS LINK/SHORTCUT INFO
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION LINK_INFO
+	(
+			string $url	// FILE ADDRESS/LOCATION
+	): ARRAY
+	{
+		// taken from "The Windows Shortcut File Format.pdf" V1.0 as
+		// reverse-engineered by Jesse Hager <jessehager@iname.com>
+		if ( !file_exists ( $url ) ) return [];
+		
+		$bin = file_get_contents ( $url, 2048 );
+		
+		if (!defined("WIN_LNK_F_ITEMLIST"))
+		{
+			define("WIN_LNK_F_ITEMLIST", 1);
+			define("WIN_LNK_F_FILE", 2);
+			define("WIN_LNK_F_DESC", 4);
+			define("WIN_LNK_F_RELATIVE", 8);
+			define("WIN_LNK_F_WORKDIR", 16);
+			define("WIN_LNK_F_CMDARGS", 32);
+			define("WIN_LNK_F_ICON", 64);
+			define("WIN_LNK_F2_DIR", 16);
+			
+			function bread(&$bin, &$p, $bytes=4)
+			{
+				$h = bin2hex( strrev($s = substr($bin, $p, $bytes)) );
+				$v = base_convert($h, 16, 10);
+				$p += $bytes;
+				return $v;
+			}
+		}
+		
+		$res = array();
+		$p = 0x14;
+		$fl=$res["flags"] = bread($bin,$p);
+		$res["t_attr"] = bread($bin,$p);
+		$p = 0x4C;
+		
+		if ($fl & WIN_LNK_F_ITEMLIST)
+		{
+			$p += bread($bin,$p,2);
+		}
+		
+		if ($fl & WIN_LNK_F_FILE)
+		{
+			$p0 = $p;
+			$p = $p0 + 0x10;
+			$p_path = $p0 + bread($bin,$p);
+			$p = $p0 + 0x18;
+			$p_file = $p0 + bread($bin,$p);
+			$path = substr($bin, $p_path, 704);
+			$path = substr($path, 0, strpos($path, "\000"));
+			$file = substr($bin, $p_file, 704);
+			$file = substr($file, 0, strpos($file, "\000"));
+			$res["path"] = $path;
+			$res["file"] = $file;
+		}
+		
+		return $res;
+	}
+	
+	/*///------------------------------------------------------------------------
 			>>> FIND PROPER PATH TO FILE
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION FILEPATH 
@@ -3039,7 +3172,10 @@ CLASS TASK
 			string $resourceName = 'FILES::error404',	// FILE DATA/BLOB
 			string $lock = 'auto',						// RESIZE BASED ON HEIGHT / WIDTH / AUTO
 			int $max_size = 130,						// SET MAX SIZE OF HEIGHT / WIDTH
-			bool $no_cache = false						// CACHE IMAGE?
+			bool $no_cache = false,						// CACHE IMAGE?
+			bool $blur = false,							// BLUR IMAGE DURING RESIZE?
+			bool $resampled = true,						// USE RESAMPLING? (CAN BE SLOWER)
+			bool $simple = false						// USE SIMPLE RESIZE?
 	)
 	{
 		if ( strpos ( $resourceName, '::' ) === false )
@@ -3055,7 +3191,7 @@ CLASS TASK
 		$filename = '';
 		$data = base64_decode ( SELF::BASE64_FORMAT_STRIP ( constant( $resourceName ) ), $filename );
 		SELF::SET_MIMETYPE ( $data, $filename );
-		SELF::IMAGE_RESIZE ( $data, $lock, $max_size, '', $no_cache );
+		SELF::IMAGE_RESIZE ( $data, $lock, $max_size, '', $no_cache, $blur, $resampled, $simple );
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -3067,7 +3203,10 @@ CLASS TASK
 			string $filename = '',	// PREFERRED FILENAME
 			string $lock = 'auto',	// RESIZE BASED ON HEIGHT / WIDTH / AUTO
 			int $max_size = 130,	// SET MAX SIZE OF HEIGHT / WIDTH
-			bool $no_cache = false	// CACHE IMAGE?
+			bool $no_cache = false,	// CACHE IMAGE?
+			bool $blur = false,		// BLUR IMAGE DURING RESIZE?
+			bool $resampled = true,	// USE RESAMPLING? (CAN BE SLOWER)
+			bool $simple = false	// USE SIMPLE RESIZE?
 	)
 	{
 		// CORRECT THE VARIABLES
@@ -3089,7 +3228,7 @@ CLASS TASK
 		SELF::SET_MIMETYPE ( $data, $filename );
 		
 		// RESIZE AND ECHO THE DATA
-		SELF::IMAGE_RESIZE ( $data, $lock, $max_size, '', $no_cache );
+		SELF::IMAGE_RESIZE ( $data, $lock, $max_size, '', $no_cache, $blur, $resampled, $simple );
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -3103,14 +3242,19 @@ CLASS TASK
 	FINAL PUBLIC STATIC FUNCTION IMAGE_RESIZE_ZIP()
 	{
 		$me = func_get_args();
-		$types = 'string, string, int, string, string, bool, bool';
-		$names = 'zipfile, zipcontent, max_size, lock, filename, no_cache, allow404';
-		$default_values = [130, 'auto', '', true];
+		$types = 'string, string, int, string, string, bool, bool, bool, bool, bool';
+		$names = 'zipfile, zipcontent, max_size, lock, filename, no_cache, allow404, blur, resampled, simple';
+		$default_values = [130, 'auto', '', true, true, false, true, false];
 		if ( !SELF::ARGS( $me, $types, $default_values, $names ) ) return SELF::FAIL;
 		
-		$data = SELF::READ_ZIP_CONTENT( $me->zipfile, $me->zipcontent, $me->filename );
-		$allow404 = $me->allow404;
-		$no_cache = $me->no_cache;
+		$data		= SELF::READ_ZIP_CONTENT( $me->zipfile, $me->zipcontent, $me->filename );
+		$max_size	= $me->max_size;
+		$lock		= $me->lock;
+		$no_cache	= $me->no_cache;
+		$allow404	= $me->allow404;
+		$blur		= $me->blur;
+		$resampled	= $me->resampled;
+		$simple		= $me->simple;
 		
 		if ( $data === false && $allow404 )
 		{
@@ -3120,7 +3264,20 @@ CLASS TASK
 			SELF::SET_MIMETYPE ( $data, $filename );
 		}
 		
-		if ( $data !== false ) SELF::IMAGE_RESIZE ( $data, $me->lock, $me->max_size, '', $no_cache );
+		if ( $data !== false )
+		{
+			SELF::IMAGE_RESIZE
+			(
+				$data,
+				$lock,
+				$max_size,
+				'',
+				$no_cache,
+				$blur,
+				$resampled,
+				$simple
+			);
+		}
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -3133,18 +3290,21 @@ CLASS TASK
 	FINAL PUBLIC STATIC FUNCTION IMAGE_RESIZE_URL()
 	{
 		$me = func_get_args();
-		$types = 'string, int, string, string, bool, bool';
-		$names = 'url, max_size, lock, filename, no_cache, allow404';
-		$default_values = [130, 'auto', '', true];
+		$types = 'string, int, string, string, bool, bool, bool, bool, bool';
+		$names = 'url, max_size, lock, filename, no_cache, allow404, blur, resampled, simple';
+		$default_values = [130, 'auto', '', true, true, false, true, false];
 		if ( !SELF::ARGS( $me, $types, $default_values, $names ) ) return SELF::FAIL;
 		
-		$url = SELF::FILEPATH ( $me->url );
-		$lock = $me->lock;
-		$max_size = $me->max_size;
-		$filename = $me->filename;
-		$no_cache = $me->no_cache;
-		$allow404 = $me->allow404;
-		$scriptDir = str_replace( '\\', '/', $_SERVER['PHP_SELF'] );
+		$url		= SELF::FILEPATH ( $me->url );
+		$max_size	= $me->max_size;
+		$lock		= $me->lock;
+		$filename	= $me->filename;
+		$no_cache	= $me->no_cache;
+		$allow404	= $me->allow404;
+		$blur		= $me->blur;
+		$resampled	= $me->resampled;
+		$simple		= $me->simple;
+		$scriptDir	= str_replace( '\\', '/', $_SERVER['PHP_SELF'] );
 		
 		if ( file_exists ( $url ) || SELF::URLEXISTS ( $url ) )
 		{
@@ -3153,12 +3313,31 @@ CLASS TASK
 				$url = str_ireplace ( $scriptDir, '', $url );
 			}
 			$data = SELF::SET_URL_MIMETYPE ( $url, $filename );
-			SELF::IMAGE_RESIZE ( $data, $lock, $max_size, $url, $no_cache );
+			SELF::IMAGE_RESIZE
+			(
+				$data,
+				$lock,
+				$max_size,
+				$url,
+				$no_cache,
+				$blur,
+				$resampled,
+				$simple
+			);
 		}
 		else if ( $allow404 )
 		{
 			// SHOW ERROR 404
-			SELF::IMAGE_RESIZE_RESOURCE ( "FILES::error404", $lock, $max_size );
+			SELF::IMAGE_RESIZE_RESOURCE
+			(
+				"FILES::error404",
+				$lock,
+				$max_size,
+				$no_cache,
+				$blur,
+				$resampled,
+				$simple
+			);
 		}
 	}
 	
@@ -3171,7 +3350,10 @@ CLASS TASK
 			string $lock = 'auto',	// RESIZE BASED ON HEIGHT / WIDTH / AUTO
 			int $max_size = 130,	// SET MAX SIZE OF HEIGHT / WIDTH
 			string $file = '',		// FILE LOCATION IF AVAILABLE
-			bool $no_cache = false	// CACHE IMAGE?
+			bool $no_cache = false,	// DISABLE IMAGE CACHE?
+			bool $blur = false,		// BLUR IMAGE DURING RESIZE?
+			bool $resampled = true,	// USE RESAMPLING FOR SMOOTHER RESIZED IMAGE? (CAN BE SLOWER)
+			bool $simple = false	// USE SIMPLE RESIZE
 	)
 	{
 		// CHECK IF FILE EXISTS
@@ -3267,10 +3449,10 @@ CLASS TASK
 		$newheight = $height * $scale;
 		
 		// SWITCH ON ANTIALIAS
-		imageantialias ( $image, true );
+		if ( $blur ) imageantialias ( $image, true );
 		
 		// WHEN DOWNSCALING
-		if ( $scale < 1 )
+		if ( $blur && $scale < 1 )
 		{
 			// CORRECT THE PIXEL SCALE
 			imagefilter ( $image, IMG_FILTER_PIXELATE, ( 1 / $scale ), true );
@@ -3282,7 +3464,13 @@ CLASS TASK
 			//imagefilter ( $image, IMG_FILTER_SMOOTH, 1 - round ( 1 / $scale ) );
 		}
 		
-		if ( $file_exists )
+		// USE A SIMPLE IMAGE SCALING METHOD ( LESS PRONE TO ERRORS )
+		if ( $simple )
+		{
+			// CHANGE IMAGE DIMENSIONS
+			$image = imagescale ( $image, $newwidth, $newheight );
+		}
+		else
 		{
 			// CREATE IMAGE CANVAS
 			$newImage= imagecreatetruecolor ( $newwidth, $newheight );
@@ -3297,36 +3485,33 @@ CLASS TASK
 			imagefill ( $newImage, 0, 0, $alpha );
 			
 			// SWITCH ON ANTIALIAS
-			imageantialias ( $newImage, true );
+			if ( $blur ) imageantialias ( $newImage, true );
+			
+			// PREPARE PARAMETERS
+			$imgpars = [ $newImage, $image, 0, 0, 0, 0, $newwidth, $newheight, $width, $height ];
 			
 			// RESIZE IMAGE TO FIT CANVAS
-			imagecopyresized (
-				$newImage,
-				$image,
-				0, 0, 0, 0,
-				$newwidth,
-				$newheight,
-				$width,
-				$height
-			);
+			if ( $resampled )
+			{
+				imagecopyresampled ( ...$imgpars );
+			}
+			else
+			{
+				imagecopyresized ( ...$imgpars );
+			}
 			
 			// REPLACE THE CURRENT IMAGE
 			$image = $newImage;
 		}
-		else
-		{
-			// CHANGE IMAGE DIMENSIONS
-			$image = imagescale($image, $newwidth, $newheight);
-		}
 		
-		if ( $scale < 1 )
+		if ( $blur && $scale < 1 )
 		{
 			// BLUR FOR SMOOTHER IMAGE
-			imagefilter($image, IMG_FILTER_SELECTIVE_BLUR);
+			imagefilter ( $image, IMG_FILTER_SELECTIVE_BLUR );
 		}
-		else
+		else if ( $blur )
 		{
-			imagefilter($image, IMG_FILTER_SELECTIVE_BLUR);
+			imagefilter ( $image, IMG_FILTER_SELECTIVE_BLUR );
 			imagefilter ( $image, IMG_FILTER_SMOOTH, 9 );
 		}
 		
@@ -5079,11 +5264,11 @@ SCRIPT
 			{
 				$rawname = $n;
 			}
-			
-			// DEDUCT 20PX PADDING OF OUTER DIV TO PX LIMIT
-			// SPLIT THE RAW FILENAME TO MAKE IT FIT THE THUMBNAIL
-			$rawname = TASK::PX_PER_WORD ( $rawname, $thumbsize - 20, $fontsize );
 		}
+		
+		// DEDUCT 20PX PADDING OF OUTER DIV TO PX LIMIT
+		// SPLIT THE RAW FILENAME TO MAKE IT FIT THE THUMBNAIL
+		$rawname = TASK::PX_PER_WORD ( $rawname, $thumbsize - 20, $fontsize );
 		
 		// PREPARE THE PROPERTIES FOR THE HYPERLINK
 		$anchor_properties = ( $anchor_properties != '' ) ? $anchor_properties : (
@@ -5209,7 +5394,8 @@ SCRIPT
 	FINAL PUBLIC STATIC FUNCTION ZIP
 	(
 			string $file_url,							// FILE URL
-			string $request_keys = '',					// REQUEST KEYS
+			string $start_key = '',						// REQUEST KEY FOR START OF LIST
+			string $end_key = '',						// REQUEST KEY FOR END OF LIST
 			string $parent_varname = '',				// VARIABLE NAME FOR PARENT FOLDER
 			string $parent_url_extras = '',				// EXTRA PARAMETERS FOR FOLDER ANCHOR
 			string $zip_varname = '',					// VARIABLE NAME FOR ZIP FILE
@@ -5264,6 +5450,12 @@ SCRIPT
 		
 		// INITIALIZE RESULT
 		$result = '';
+		
+		// INITIALIZE REQUEST KEYS $_REQUEST[$key]
+		$request_keys = '';
+		
+		// USE REQUEST KEYS WHEN DISPLAYING ALL ZIP CONTENT
+		if ( $display_all ) $request_keys = "$start_key, $end_key";
 		
 		// READ THE CONTENT(S) OF ZIP FILE
 		$zipFolder = $task ( 'ZIPLIST', $request_keys, [$fn, true] );
