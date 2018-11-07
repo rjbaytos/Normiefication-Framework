@@ -4110,6 +4110,10 @@ CLASS TASK
 		if ( $this->VARIABLES['CONNECTION'] == NULL )
 		{
 			$this->VARIABLES['CONNECTION'] = $this->PDO_CONNECT();
+			if ( $this->VARIABLES['CONNECTION'] == NULL )
+			{
+				die ( '<script type="text/javascript">alert("'.SELF::$STATIC['ERROR'].'");</script>' );
+			}
 		}
 		
 		// PREPARE PARAMETERS
@@ -4604,6 +4608,577 @@ CLASS MEDIA
 	INTERFACE SCRIPTS
 ---------------------------------------------------------------------------------
 /*///----------------------------------------------------------------------------
+CLASS FILEMANAGER
+{
+	// RUN THE LISTENER AT CONSTRUCT
+	PUBLIC STATIC $AUTORUN			= false;						//
+	
+	// CACHE IMAGE?
+	PUBLIC $no_cache				= false;						//
+	
+	// OPEN FILE MANAGER TO THE INTERNET
+	PUBLIC $allowaccess				= false;						//
+	
+	// DOMAINS WITH FULL ACCESS TO LOCAL FILES
+	PRIVATE $WHITELIST				= ['localhost', '127.0.0.1'];	//
+	
+	// AJAX TARGET ELEMENT
+	PUBLIC $AJAXTargetElement		= 'div.imgpreview';				//
+	
+	// DATABASE PROPERTIES
+	PUBLIC $db_username							= '';				// i.e. 'root'
+	PUBLIC $db_password							= '';				// i.e. 'password123'
+	PUBLIC $db_host								= '';				// i.e. 'localhost'
+	PUBLIC $db_database							= '';				// i.e. 'myDatabase'
+	
+	// POST/GET/REQUEST VARIABLE NAMES:
+	PUBLIC $AJAXFileFetch_RequestVariable		= 'fetch';			//
+	PUBLIC $DataLocation_RequestVariable		= 'dir';			//
+	PUBLIC $FullImage_RequestVariable			= 'full';			//
+	PUBLIC $Thumbsize_RequestVariable			= 'thumbsize';		//
+	PUBLIC $File_RequestVariable				= 'filename';		//
+	PUBLIC $Encode_RequestVariable				= 'encode';			//
+	PUBLIC $Stream_RequestVariable				= 'media';			//
+	PUBLIC $URLThumb_RequestVariable			= 'th';				//
+	PUBLIC $Resource_RequestVariable			= 'resource';		//
+	PUBLIC $ZipFile_RequestVariable				= 'zipfile';		//
+	PUBLIC $ZipContent_RequestVariable			= 'content';		//
+	PUBLIC $ZipImageContent_RequestVariable		= 'zipimg';			//
+	PUBLIC $ZipThumbSource_RequestVariable		= 'zipthfile';		//
+	PUBLIC $ZipThumbContent_RequestVariable		= 'zipthimg';		//
+	PUBLIC $Script_RequestVariable				= 'script';			//
+	PUBLIC $ScriptParameter_RequestVariables	= '*';				//
+	PUBLIC $RangeStart_RequestVariable			= 'start';			//
+	PUBLIC $RangeEnd_RequestVariable			= 'end';			//
+	PUBLIC $WatchMedia_RequestVariable			= 'watch';			//
+	PUBLIC $ListenToMedia_RequestVariable		= 'listen';			//
+	PUBLIC $Database_RequestVariable_m1			= '';				// i.e. 'id'
+	PUBLIC $Database_RequestVariable_m2			= '';				// i.e. 'name'
+	PUBLIC $Database_RequestVariable_m3			= '';				// i.e. 'imgid'
+	// AJAXFileFetch_RequestVariable
+	//		REQUEST VARIABLE NAME AUTO-APPENDED BY SYSTEM FOR IDENIFYING AJAX LINKS.
+	//		WHEN ADDED TO A FILE URL, THE SYSTEM WILL DISPLAY THE FILE BROWSER HTML/UI
+	//		AND FETCH THE FILE TO BE DISPLAYED DYNAMICALLY WITHIN THE PAGE
+	//			i.e. http://localhost?...&fetch
+	// DataLocation_RequestVariable
+	//		FILE DIRECTORY OR URL
+	//			i.e. http://localhost?dir=c:/path/to/file/
+	// FullImage_RequestVariable
+	//		FULLSIZE AJAX IMAGE URL
+	//			i.e. http://localhost?dir=...&full=file.jpg
+	// Thumbsize_RequestVariable
+	//		THUMBNAIL SIZE
+	//			i.e. http://localhost?...&thumbsize=150
+	// File_RequestVariable
+	//		FILE URL
+	//			i.e. http://localhost?filename=c:/path/to/file.jpg
+	// Encode_RequestVariable
+	//		FILE URL TO ENCODE
+	//			i.e. http://localhost?encode=c:/my/file.jpg
+	// Stream_RequestVariable
+	//		MEDIA URL
+	//			i.e. http://localhost?media=c:/path/file.mp3
+	// URLThumb_RequestVariable
+	//		THUMBNAIL FILE URL
+	//			i.e. http://localhost?th=c:/path/fullImage.jpg
+	// Resource_RequestVariable
+	//		RESOURCE FILE VARIABLE NAME
+	//			i.e. http://localhost?resource=icon
+	// ZipFile_RequestVariable
+	//		ZIP FILE URL
+	//			i.e. http://localhost?zipfile=c:/path/to/file.zip
+	// ZipContent_RequestVariable
+	//		ZIP/FOLDER CONTENT URL
+	//			i.e. http://localhost?zipfile=c:/path/file.zip&content=file.exe
+	//			i.e. http://localhost?dir=c:/path/&content=file.exe
+	// ZipImageContent_RequestVariable
+	//		ZIP IMAGE CONTENT
+	//			i.e. http://localhost?zipfile=...&zipimg=img.jpg
+	// ZipThumbSource_RequestVariable
+	//		ZIP THUMBNAIL SOURCE
+	//			i.e. http://localhost?zipthfile=c:/path/file.zip
+	// ZipThumbContent_RequestVariable
+	//		ZIP THUMBNAIL CONTENT IMAGE FILE
+	//			i.e. http://localhost?zipthfile=c:/path/file.zip&zipthimg=file.jpg
+	// Script_RequestVariable
+	//		SCRIPT FUNCTION NAME
+	//			i.e. http://localhost?script=ui
+	// ScriptParameter_RequestVariables
+	//		SCRIPT PARAMETERS PARAMETERS TO BE PASSED TO SCRIPT FUNCTION
+	//			i.e. http://localhost?script=ui&tabs=3
+	// RangeStart_RequestVariable
+	//		FILE LIST STARTING POINT
+	//			i.e. http://localhost?dir=...&start=1
+	// RangeEnd_RequestVariable
+	//		FILE LIST END POINT
+	//			i.e. http://localhost?dir=...&start=10&end=20
+	// WatchMedia_RequestVariable
+	//		PATH TO VIDEO
+	//			i.e. http://localhost?watch=c:/path/to/video.mp4
+	// ListenToMedia_RequestVariable
+	//		PATH TO MUSIC
+	//			i.e. http://localhost?listen=c:/path/to/music.mp3
+	// Database_RequestVariable_m1
+	//		DATABASE COLUMN REQUEST
+	//			i.e. http://localhost?id=1
+	// Database_RequestVariable_m2
+	//		DATABASE COLUMN REQUEST
+	//			i.e. http://localhost?name=filename
+	// Database_RequestVariable_m3
+	//		DATABASE COLUMN REQUEST
+	//			i.e. http://localhost?imgid=1
+	
+	// DATABASE TABLE AND COLUMN (ALL METHODS):
+	PUBLIC $DB_Table							= '';	// i.e. 'file'
+	PUBLIC $DB_SelectDataColumn					= '';	// i.e. 'data'
+	
+	// FOR CUSTOM QUERY (METHOD 1 AND 3)
+	PUBLIC $DB_SelectFilenameColumn				= '';	// i.e.: 'CONCAT_WS ( ".", name, extension )' or 'fname'
+	PUBLIC $DB_WhereConditionColumn				= '';	// i.e.: 'id'
+	
+	// HTML ELEMENT PROPERTIES:
+	PUBLIC $image_properties					= "class='imagepreview'";
+	PUBLIC $thumbnail_adjustment_orientation	= 'auto';
+	PUBLIC $thumbsize							= 100;
+	
+	// OUTPUT HTML STRING INITIALIZATION
+	PUBLIC $files								= '';
+	PUBLIC $imdispl								= '';
+	
+	
+	/*///------------------------------------------------------------------------
+			>>> INITIALIZE CLASS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION __CONSTRUCT ( bool $run = null )
+	{
+		$run = $run === null ? SELF::$AUTORUN : $run;
+		if ( $run ) $this->LISTEN();
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> RE-INITIALIZE CLASS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION __INVOKE()
+	{
+		return $this->LISTEN();
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> ALLOW CONNECTION TO LOCAL FILES
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION ALLOW_FULL_ACCESS_FROM()
+	{
+		$this->WHITELIST = func_get_args();
+		$this->WHITELIST[] = 'localhost';
+		$this->WHITELIST[] = '127.0.0.1';
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> BLOCK CONNECTION TO FILES
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION BLOCK_CONNECTIONS()
+	{
+		if
+		(
+				!in_array ( $_SERVER['HTTP_HOST'], $this->WHITELIST ) ||
+				!in_array ( $_SERVER['HTTP_HOST'], $this->WHITELIST ) &&
+				!$this->allowaccess
+		)
+		{
+			$dir = $this->DataLocation_RequestVariable;
+			if
+			(
+				!$this->allowaccess ||
+				isset ( $_REQUEST[$dir] ) &&
+				stripos( rawurldecode ( $_REQUEST[$dir] ), 'c:/wamp64/www/main' ) === false &&
+				stripos( rawurldecode ( $_REQUEST[$dir] ), 'c:\\wamp64\\www\\main' ) === false
+			)	{	die ( '<script type="text/javascript">alert("ACCESS DENIED");</script>' );	}
+		}
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> CREATE UI
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION LISTEN()
+	{
+		$this->BLOCK_CONNECTIONS();
+		
+		// SET CONTENT-ENCODING TO GZIP (APPLY GZIP COMPRESSION)
+		TASK::COMPRESS();
+		
+		// ELEMENT THAT DISPLAYS IMAGES, VIDEOS, AND MUSIC UPON AJAX REQUEST
+		$AJAXTargetElement	= $this->AJAXTargetElement;
+		
+		// REQUEST VARIABLE NAMES:
+		$uirvar				= $this->AJAXFileFetch_RequestVariable;
+		$locrvar			= $this->DataLocation_RequestVariable;
+		$irvar				= $this->FullImage_RequestVariable;
+		$thrvar				= $this->Thumbsize_RequestVariable;
+		$frvar				= $this->File_RequestVariable;
+		$encvar				= $this->Encode_RequestVariable;
+		$strvar				= $this->Stream_RequestVariable;
+		$urlthvar			= $this->URLThumb_RequestVariable;
+		$rsrcvar			= $this->Resource_RequestVariable;
+		$zipfrvar			= $this->ZipFile_RequestVariable;
+		$zipcrvar			= $this->ZipContent_RequestVariable;
+		$zipirvar			= $this->ZipImageContent_RequestVariable;
+		$zipthfrvar			= $this->ZipThumbSource_RequestVariable;
+		$zipthcrvar			= $this->ZipThumbContent_RequestVariable;
+		$scriptrvar			= $this->Script_RequestVariable;
+		$scriptparsrvar		= $this->ScriptParameter_RequestVariables;
+		$rstart				= $this->RangeStart_RequestVariable;
+		$rend				= $this->RangeEnd_RequestVariable;
+		$rwatch				= $this->WatchMedia_RequestVariable;
+		$rlisten			= $this->ListenToMedia_RequestVariable;
+		
+		// INITIALIZE JAVASCRIPT PARAMETERS
+		if ( $scriptparsrvar == '*' )
+		{
+			$scriptparsrvar = '';
+			foreach ( array_keys ( $_REQUEST ) as $key )
+			{
+				if ( $key != $scriptrvar )
+				{
+					$scriptparsrvar .= ", $key";
+				}
+			}
+		}
+		// JAVASCRIPT PARAMETERS
+		$ziprvar			= "{$zipfrvar}, {$zipcrvar}";
+		$scriptrvars		= "{$scriptrvar}{$scriptparsrvar}";
+		
+		// DATABASE PARAMETERS
+		$dbscol				= $this->DB_SelectDataColumn;			// SELECT $dbscol
+		$dbtable			= $this->DB_Table;						// FROM $dbtable
+		$dbccol1			= $this->Database_RequestVariable_m1;	// method1 condition and request var name
+		$dbccol2			= $this->Database_RequestVariable_m2;	// method2 condition and request var name
+		$dbccol3			= $this->DB_WhereConditionColumn;		// method3 condition var name
+		$dbrkey				= $this->Database_RequestVariable_m3;	// method3 request var name
+		
+		// BUILD SELECT STRING (METHOD 1 & 3)
+		$dbFNTempVar		= 'filename'.time().rand(100000,999999);
+		$dbfncol			= ( $this->DB_SelectFilenameColumn == '' ) ? '' :
+							  ", {$this->DB_SelectFilenameColumn} AS {$dbFNTempVar}";
+		$dbselect			= "{$dbscol}{$dbfncol}";
+		
+		// HTML ELEMENT PROPERTIES:
+		$iprop				= $this->image_properties;
+		$lock				= $this->thumbnail_adjustment_orientation;
+		$no_cache			= $this->no_cache;
+		
+		// GET USER DECLARED THUMBSIZE
+		$thumbtemp			= TASK::ARRAY_KEY ( $_REQUEST, $thrvar, $this->thumbsize );
+		$this->thumbsize	= empty ($thumbtemp) ? $this->thumbsize : $thumbtemp;
+		$thumbsize			= $this->thumbsize;
+		
+		// INITIALIZE WHETHER OR NOT TO DISPLAY HTML (FOR FILE OUTPUT)
+		$uiRequest			= false;
+		
+		// CHECK IF A FILE IS REQUESTED
+		if ( isset ($_REQUEST[$irvar]) )
+		{
+			$_REQUEST[$irvar] = TASK::FILENAME_REENCODE ( $_REQUEST[$irvar] );
+			$this->imdispl = "<img src='?{$frvar}={$_REQUEST[$irvar]}' {$iprop} />";
+			$uiRequest = true;
+		}
+		
+		// CHECK IF A FILE WITHIN A ZIP FOLDER IS REQUESTED
+		if ( isset ($_REQUEST[$locrvar]) && isset ($_REQUEST[$zipirvar]) )
+		{
+			$_REQUEST[$locrvar] = rawurlencode ( rawurldecode ( $_REQUEST[$locrvar] ) );
+			$_REQUEST[$zipirvar] = rawurlencode ( rawurldecode ( $_REQUEST[$zipirvar] ) );
+			$this->imdispl = "<img src='?" .
+							 "{$zipfrvar}={$_REQUEST[$locrvar]}&" .
+							 "{$zipcrvar}={$_REQUEST[$zipirvar]}'" .
+							 " {$iprop} />";
+			$uiRequest = true;
+		}
+		
+		// RETURN IMAGE LOCATION WRAPPED IN HTML TAGS WHEN AJAX REQUEST IS DETECTED
+		if ( isset ($_REQUEST[$uirvar]) && $uiRequest)
+		{
+			echo $this->imdispl;
+			die;
+		}
+		
+		// INITIALIZE CORE LIBRARY
+		$task = new TASK($this->db_username, $this->db_password, $this->db_host, $this->db_database);
+		
+		// EXAMPLES:
+		//	?script=ui&parameter1=value1&parameter2=value2&parameter3[0]=value3
+		//	?script=image&element=%23elementID&resource=icon
+		//	?script=image&HTMLElements=element_1,element_2&sources=resource,path/to/file.png
+		if ( !empty ( $scriptrvars ) ) $task('SCRIPT', $scriptrvars);
+		
+		// ?encode=example.jpg
+		if ( !empty ( $encvar ) ) $task( 'ENCODE', $encvar, function ($result) {
+			header ('content-type:text'); echo $result; die;
+		});
+		
+		// ?media=example.mp4
+		if ( !empty ( $strvar ) ) $task( 'STREAM', $strvar );
+		
+		// ?resource=resourceName
+		if ( !empty ( $rsrcvar ) ) $task( 'RESOURCE', $rsrcvar );
+		
+		// ?zipfile=example/example.zip&content=folderInsideZip/example.jpg
+		if ( !TASK::IS_EMPTY ( $zipfrvar, $zipcrvar ) ) $task( 'ZIP', $ziprvar, [$no_cache] );
+		
+		// ?filename=example/example.jpg
+		if ( !empty ( $frvar ) ) $task( 'FILE', $frvar, [$no_cache] );
+		
+		// DATABASE QUERY METHOD 1
+		if
+		(
+			!TASK::IS_EMPTY ( $this->db_username, $this->db_password, $this->db_host, $this->db_database ) &&
+			!empty ( $dbccol1 ) &&
+			$task ( 'QUERY_ECHO', $dbccol1, [ SELF::QSTR ( $dbtable, $dbccol1, $dbselect ) ] ) == TASK::ERROR
+		)
+		{
+			TASK::RESOURCE ( "error404" );
+		}
+		
+		// DATABASE QUERY METHOD 2
+		if
+		(
+			!TASK::IS_EMPTY ( $this->db_username, $this->db_password, $this->db_host, $this->db_database ) &&
+			!TASK::IS_EMPTY ( $dbccol2, $dbscol, $dbtable ) &&
+			$task ( 'AUTOSELECT', $dbccol2, [$dbtable, $dbscol] ) == TASK::ERROR
+		)
+		{
+			TASK::RESOURCE ( "error404" );
+		}
+		
+		// DATABASE QUERY METHOD 3
+		if ( !TASK::IS_EMPTY ( $this->db_username, $this->db_password, $this->db_host, $this->db_database ) )
+		{
+			$request_keys = "$dbrkey, !$thrvar";
+			$show404 = true;
+			$task
+			(
+				'QUERY',
+				$request_keys,
+				[ SELF::QSTR ( $dbtable, $dbrkey, $dbselect, $dbccol3 ) ],
+				function ( $data ) use
+				(
+						$lock,
+						$thumbsize,
+						$no_cache,
+						$thrvar,
+						$show404,
+						$dbscol,
+						$dbFNTempVar
+				)
+				{
+					$usethumb = isset ( $_REQUEST [ $thrvar ] );
+					$resultCount = count ( $data );
+					if ( $resultCount == 0 && $show404 )
+					{
+						if ( $usethumb )
+							TASK::RESOURCETHUMB ( "error404", $lock, $thumbsize );
+						else
+							TASK::RESOURCE ( "error404" );
+						die;
+					}
+					else if ( $resultCount == 0 )
+					{
+						return false;
+					}
+					
+					foreach ( $data as $row )
+					{
+						$result_filename = array_key_exists ( $dbFNTempVar, $row ) ?
+										   $row[$dbFNTempVar] : '';
+						if ( $usethumb )
+							TASK::BLOBTHUMB
+							(
+									$row[$dbscol],
+									$result_filename,
+									$lock,
+									$thumbsize,
+									$no_cache
+							);
+						else
+							TASK::BLOB($row[$dbscol], $result_filename);
+					}
+					
+					return true;
+				}
+			);
+		}
+		
+		// THUMBNAILS:
+		$task('ZIPTHUMB', "{$zipthfrvar}, {$zipthcrvar}", [$thumbsize, $lock, $no_cache]);
+		$task('URLTHUMB', $urlthvar, [$thumbsize, $lock, $no_cache]);
+		
+		$limit = 20;
+		$environment = "&$rstart=1&$rend=$limit&$thrvar=$thumbsize";
+		$getVariables = "!$uirvar, !$thrvar, !$irvar, !$zipirvar, $locrvar, $rstart, $rend";
+		$folder = (	!isset ( $_REQUEST[$rwatch] ) ) ? '' :
+					rawurlencode ( dirname ( rawurldecode ( $_REQUEST[$rwatch] ) ) );
+		$folder = (	!isset ( $_REQUEST[$rlisten] ) ) ? $folder :
+					rawurlencode ( dirname ( rawurldecode ( $_REQUEST[$rlisten] ) ) );
+		$this->files = "\r\n\t\t<script>AJAXLink('div.ajax', 'a.ajax', '&{$uirvar}');</script>";
+		$this->files .= gui::style ($lock, $thumbsize);
+		$this->files .= gui::disks($locrvar, $environment);
+		$this->files .= (	!isset ( $_REQUEST[$rwatch] ) ) ? '' :
+							gui::icon($folder, $locrvar, $thumbsize, $environment).
+							gui::video($_REQUEST[$rwatch], $strvar, $frvar);
+		$this->files .= (	!isset ( $_REQUEST[$rlisten] ) ) ? '' :
+							gui::icon($folder, $locrvar, $thumbsize, $environment).
+							gui::audio($_REQUEST[$rlisten], $strvar, $frvar);
+		$this->files .= ( $taskresult = $task
+		(
+			'FOLDER', $getVariables, [true],
+			function ( $result ) use
+			(
+					$thumbsize,
+					$limit,
+					$rstart,
+					$rend,
+					$environment,
+					$irvar,
+					$zipfrvar,
+					$zipcrvar,
+					$zipirvar,
+					$zipthfrvar,
+					$zipthcrvar,
+					$frvar,
+					$thrvar,
+					$urlthvar,
+					$locrvar,
+					$rwatch,
+					$rlisten,
+					$AJAXTargetElement
+			)
+			{
+				$resstring = '';
+				$allowedExtensions = ['exe', 'doc', 'txt', 'mkv', 'avi', 'mpg', 'lnk', 'torrent'];
+				$ImageAnchorProperties = "class='ajax' target='$AJAXTargetElement'";
+				$start = 1;
+				$end = $limit;
+				$step = $end - $start;
+				$s = intval ( TASK::REQUEST ( $rstart ) );
+				$e = intval ( TASK::REQUEST ( $rend ) );
+				$folderurl = rawurlencode ( rawurldecode ( TASK::REQUEST ($locrvar) ) );
+				$extras = "{$locrvar}={$folderurl}&{$rstart}=1&{$rend}={$limit}&";
+				while ( $start <= $result['count'] )
+				{
+					if ( $end > $result['count'] ) $end = $result['count'];
+					if ( $s != $start || $e < $end )
+					{
+						$resstring .= gui::icon(
+											$folderurl,
+											$locrvar,
+											$thumbsize,
+											"&{$rstart}={$start}&{$rend}={$end}&{$thrvar}={$thumbsize}",
+											"[ ({$start}-{$end}) of {$result['count']} ]"
+									);
+					}
+					$start = $end + 1;
+					$end = $start + $step;
+				}
+				foreach ( $result as $fileResult )
+				{
+					$fn = rawurldecode ($fileResult);
+					if ( !is_readable ( $fn ) ) continue;
+					$mimetype = is_file ( $fn ) ? strtolower ( mime_content_type ( $fn ) ) : '';
+					$extension = strtolower ( pathinfo ( $fn, PATHINFO_EXTENSION ) );
+					if ( is_dir ( $fn ) )
+					{
+						$resstring .= gui::icon ( $fileResult, $locrvar, $thumbsize, $environment );
+					}
+					else if ( $extension == 'lnk' && TASK::IS_SHORTCUT ( $fn ) )
+					{
+						if ( ( $truepath = TASK::READ_SHORTCUT ( $fn ) ) != '' )
+						{
+							$lnkn = explode ( '.', basename ( $fn ) );
+							$rn = '';
+							for ( $lnkctr = 0; $lnkctr < count ( $lnkn ) - 1; $lnkctr++ )
+							{
+								$rn .= $lnkn [ $lnkctr ];
+							}
+							$resstring .= gui::icon ( $truepath, $locrvar, $thumbsize, $environment, $rn );
+						}
+					}
+					else if ( GUI::IS_AUDIO ( $fn, $mimetype, $extension ) )
+					{
+						$resstring .= gui::icon($fileResult, $rlisten, $thumbsize);
+					}
+					else if ( GUI::IS_VIDEO ( $fn, $mimetype, $extension ) )
+					{
+						$resstring .= gui::icon($fileResult, $rwatch, $thumbsize);
+					}
+					else if ( GUI::IS_IMAGE ( $fn, $mimetype, $extension ) )
+					{
+						$resstring .= gui::thumbnail(
+											$fileResult,
+											"{$extras}{$irvar}",
+											$urlthvar,
+											$ImageAnchorProperties,
+											$thumbsize
+									);
+					}
+					else if ( is_file ( $fn ) && $extension == 'zip' )
+					{
+						$dirUp = $locrvar;
+						$zipKeys = "{$zipfrvar}, {$dirUp}";
+						$zipContentKeys = "{$zipcrvar}, {$zipirvar}";
+						$zipThumbnailKey = $zipthfrvar;
+						$zipThumbnailContentKey = $zipthcrvar;
+						$resstring .= gui::zip
+											(
+												$fileResult,
+												$rstart,
+												$rend,
+												$dirUp,
+												$environment,
+												$zipKeys,
+												$zipContentKeys,
+												$environment,
+												$ImageAnchorProperties,
+												$zipThumbnailKey,
+												$zipThumbnailContentKey,
+												$thumbsize
+											);
+					}
+					else if ( is_file ( $fn ) && $extension == 'ico' )
+					{
+						$linkProps = "target='_blank'";
+						$resstring .= gui::thumbnail ( $fileResult, $frvar, $frvar, $linkProps, $thumbsize);
+					}
+					else if ( is_file ( $fn ) && in_array ( $extension, $allowedExtensions ) )
+					{
+						$resstring .= gui::icon($fileResult, $frvar, $thumbsize);
+					}
+				}
+				return $resstring;
+			}
+		)) !== TASK::FAIL ? $taskresult : "";
+		
+		if ( isset ( $_REQUEST [ $uirvar ] ) )
+		{
+			echo $this->files;
+			die;
+		}
+	}
+	
+	FINAL PRIVATE STATIC FUNCTION QSTR
+	(
+			$table,			// DATABASE TABLE
+			$request_key,	// REQUEST KEY OF SEARCHED VALUE
+			$select = '*',	// COLUMN TO SELECT
+			$column = ''	// COLUMN TO COMPARE
+	): STRING
+	{
+		$column = ( $column == '' ) ? $request_key : $column;
+		return	"SELECT $select " .
+				"FROM $table ".
+				"WHERE ( $column = :$request_key AND $column LIKE :$request_key ) LIMIT 1;";
+	}
+}
+
+
 CLASS GUI
 {
 	PUBLIC STATIC $VIDEO_MIME = [	// ACCEPTED VIDEO MIME TYPES
