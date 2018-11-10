@@ -1,4 +1,14 @@
 <?Php
+NAMESPACE { CLASS dev_library {} }
+NAMESPACE dev_library {
+	USE \finfo;					// DEFINITELY REQUIRED TO BROWSE FILES WITHIN NAMESPACE
+	USE \ReflectionMethod;		// REQUIRED TO MAKE ALL THE LITTLE FUNCTIONALITIES WORK
+	USE \ReflectionFunction;	// NOT SURE IF THIS IS NEEDED
+	USE \COM;					// REQUIRED FOR BROWSING FILES AND RUNNING BATCH WITHIN NAMESPACE
+	USE \ziparchive;			// REQUIRED FOR READING ZIP ARCHIVES
+	USE \PDO;					// NEEDED FOR DATABASE
+	USE \Closure;				// USED FOR PASSING ANONYMOUS FUNCTIONS AS PARAMETERS
+	USE \PDOStatement;			// USED FOR PASSING PDOStatement AS PARAMETERS
 CLASS TASK
 {
 	CONST FAIL = 'invalid arguments';		// DEFAULT ERROR THROWN BY METHODS
@@ -940,7 +950,7 @@ CLASS TASK
 		}
 		
 		// RUN THE METHOD
-		return $this->EXECUTE ( $methodname, $parameters, NULL, 'SCRIPTS' );
+		return $this->EXECUTE ( $methodname, $parameters, NULL, SELF::METHOD_NAMESPACE ( 'SCRIPTS' ) );
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -1353,6 +1363,17 @@ CLASS TASK
 		
 		// RETURN FALSE ON FAILURE
 		return false;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> RETURN NAMESPACE IF IT EXISTS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION METHOD_NAMESPACE
+	(
+			string $appendAfter = '' // STRING TO APPEND
+	)
+	{
+		return ( ( __NAMESPACE__ == '' ) ? '' : __NAMESPACE__ . "\\" ) . $appendAfter;
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -3078,7 +3099,7 @@ CLASS TASK
 			str_replace
 			(
 				"\t", '',
-				trim ( constant( "{$resourceClass}::{$resourceName}" ) )
+				trim ( constant( SELF::METHOD_NAMESPACE ( "{$resourceClass}::{$resourceName}" ) ) )
 			)
 		) . "'";
 	}
@@ -3122,6 +3143,9 @@ CLASS TASK
 			bool $allow404 = true				// ALLOW 404 ERROR MESSAGE?
 	): BOOL
 	{
+		// ADD NAMESPACE IF IT EXISTS
+		$resourceClass = SELF::METHOD_NAMESPACE ( $resourceClass );
+		
 		$constant = "{$resourceClass}::{$resourceName}";
 		
 		// CHECK IF RESOURCE CONSTANT NAME IS EMPTY
@@ -3186,6 +3210,8 @@ CLASS TASK
 		{
 			return SELF::ERROR;
 		}
+		
+		$resourceName = SELF::METHOD_NAMESPACE ( $resourceName );
 		
 		if ( !defined ( $resourceName ) ) return SELF::ERROR;
 		$filename = '';
@@ -4610,6 +4636,9 @@ CLASS MEDIA
 /*///----------------------------------------------------------------------------
 CLASS FILEMANAGER
 {
+	// DOMAINS WITH FULL ACCESS TO LOCAL FILES
+	PRIVATE $WHITELIST				= ['localhost', '127.0.0.1'];	//
+	
 	// RUN THE LISTENER AT CONSTRUCT
 	PUBLIC STATIC $AUTORUN			= false;						//
 	
@@ -4619,19 +4648,53 @@ CLASS FILEMANAGER
 	// OPEN FILE MANAGER TO THE INTERNET
 	PUBLIC $allowaccess				= false;						//
 	
-	// DOMAINS WITH FULL ACCESS TO LOCAL FILES
-	PRIVATE $WHITELIST				= ['localhost', '127.0.0.1'];	//
-	
 	// AJAX TARGET ELEMENT
 	PUBLIC $AJAXTargetElement		= 'div.imgpreview';				//
 	
+	//////////////////////////////////////////////////////////////////
 	// DATABASE PROPERTIES
-	PUBLIC $db_username							= '';				// i.e. 'root'
-	PUBLIC $db_password							= '';				// i.e. 'password123'
-	PUBLIC $db_host								= '';				// i.e. 'localhost'
-	PUBLIC $db_database							= '';				// i.e. 'myDatabase'
+	//////////////////////////////////////////////////////////////////
+	PUBLIC $DB_username							= '';				// i.e. 'root'
+	PUBLIC $DB_password							= '';				// i.e. 'password123'
+	PUBLIC $DB_host								= '';				// i.e. 'localhost'
+	PUBLIC $DB_database							= '';				// i.e. 'myDatabase'
 	
-	// POST/GET/REQUEST VARIABLE NAMES:
+	//////////////////////////////////////////////////////////////////
+	// DATABASE TABLE AND COLUMN:
+	//////////////////////////////////////////////////////////////////
+	PUBLIC $DB_Table							= '';	// i.e. 'file'
+	PUBLIC $DB_SelectDataColumn					= '';	// i.e. 'data'
+	PUBLIC $DB_SelectFilenameColumn				= '';	// i.e.: 'CONCAT_WS ( ".", name, extension )' or 'fname'
+	PUBLIC $DB_WhereColumnName					= '';	// i.e.: 'id'
+	PUBLIC $DB_CustomQuery						= '';	// i.e. SELECT data
+														//		FROM table
+														//		WHERE
+														//		(
+														//			column = :$DB_CustomQuery_AliasedRequest
+														//			AND
+														//			column LIKE :$DB_CustomQuery_AliasedRequest
+														//		)
+														//		LIMIT 1;
+	
+	//////////////////////////////////////////////////////////////////
+	// POST/GET/REQUEST VARIABLE NAMES (DATABASE):
+	//////////////////////////////////////////////////////////////////
+	PUBLIC $DB_CustomQuery_AliasedRequest		= '';				// i.e. 'id'
+	PUBLIC $DB_WhereColumnName_Request			= '';				// i.e. 'name'
+	PUBLIC $DB_WhereColumnName_AliasedRequest	= '';				// i.e. 'imgid'
+	// DB_CustomQuery_AliasedRequest
+	//		DATABASE COLUMN REQUEST
+	//			i.e. http://localhost?id=1
+	// DB_WhereColumnName_Request
+	//		DATABASE COLUMN REQUEST (USE EXACT COLUMN NAME FOUND IN DATABASE)
+	//			i.e. http://localhost?name=filename
+	// DB_WhereColumnName_AliasedRequest
+	//		DATABASE COLUMN REQUEST (USE AN ALIAS FOR THE DATABASE COLUMN 'DB_WhereColumnName')
+	//			i.e. http://localhost?imgid=1
+	
+	//////////////////////////////////////////////////////////////////
+	// POST/GET/REQUEST VARIABLE NAMES (UI):
+	//////////////////////////////////////////////////////////////////
 	PUBLIC $AJAXFileFetch_RequestVariable		= 'fetch';			//
 	PUBLIC $DataLocation_RequestVariable		= 'dir';			//
 	PUBLIC $FullImage_RequestVariable			= 'full';			//
@@ -4652,9 +4715,6 @@ CLASS FILEMANAGER
 	PUBLIC $RangeEnd_RequestVariable			= 'end';			//
 	PUBLIC $WatchMedia_RequestVariable			= 'watch';			//
 	PUBLIC $ListenToMedia_RequestVariable		= 'listen';			//
-	PUBLIC $Database_RequestVariable_m1			= '';				// i.e. 'id'
-	PUBLIC $Database_RequestVariable_m2			= '';				// i.e. 'name'
-	PUBLIC $Database_RequestVariable_m3			= '';				// i.e. 'imgid'
 	// AJAXFileFetch_RequestVariable
 	//		REQUEST VARIABLE NAME AUTO-APPENDED BY SYSTEM FOR IDENIFYING AJAX LINKS.
 	//		WHEN ADDED TO A FILE URL, THE SYSTEM WILL DISPLAY THE FILE BROWSER HTML/UI
@@ -4718,30 +4778,17 @@ CLASS FILEMANAGER
 	// ListenToMedia_RequestVariable
 	//		PATH TO MUSIC
 	//			i.e. http://localhost?listen=c:/path/to/music.mp3
-	// Database_RequestVariable_m1
-	//		DATABASE COLUMN REQUEST
-	//			i.e. http://localhost?id=1
-	// Database_RequestVariable_m2
-	//		DATABASE COLUMN REQUEST
-	//			i.e. http://localhost?name=filename
-	// Database_RequestVariable_m3
-	//		DATABASE COLUMN REQUEST
-	//			i.e. http://localhost?imgid=1
 	
-	// DATABASE TABLE AND COLUMN (ALL METHODS):
-	PUBLIC $DB_Table							= '';	// i.e. 'file'
-	PUBLIC $DB_SelectDataColumn					= '';	// i.e. 'data'
-	
-	// FOR CUSTOM QUERY (METHOD 1 AND 3)
-	PUBLIC $DB_SelectFilenameColumn				= '';	// i.e.: 'CONCAT_WS ( ".", name, extension )' or 'fname'
-	PUBLIC $DB_WhereConditionColumn				= '';	// i.e.: 'id'
-	
+	//////////////////////////////////////////////////////////////////
 	// HTML ELEMENT PROPERTIES:
+	//////////////////////////////////////////////////////////////////
 	PUBLIC $image_properties					= "class='imagepreview'";
 	PUBLIC $thumbnail_adjustment_orientation	= 'auto';
 	PUBLIC $thumbsize							= 100;
 	
+	//////////////////////////////////////////////////////////////////
 	// OUTPUT HTML STRING INITIALIZATION
+	//////////////////////////////////////////////////////////////////
 	PUBLIC $files								= '';
 	PUBLIC $imdispl								= '';
 	
@@ -4848,12 +4895,12 @@ CLASS FILEMANAGER
 		$scriptrvars		= "{$scriptrvar}{$scriptparsrvar}";
 		
 		// DATABASE PARAMETERS
-		$dbscol				= $this->DB_SelectDataColumn;			// SELECT $dbscol
-		$dbtable			= $this->DB_Table;						// FROM $dbtable
-		$dbccol1			= $this->Database_RequestVariable_m1;	// method1 condition and request var name
-		$dbccol2			= $this->Database_RequestVariable_m2;	// method2 condition and request var name
-		$dbccol3			= $this->DB_WhereConditionColumn;		// method3 condition var name
-		$dbrkey				= $this->Database_RequestVariable_m3;	// method3 request var name
+		$dbscol				= $this->DB_SelectDataColumn;				// SELECT $dbscol
+		$dbtable			= $this->DB_Table;							// FROM $dbtable
+		$where_custom		= $this->DB_CustomQuery_AliasedRequest;		// conditional vars for custom query
+		$where_noAlias		= $this->DB_WhereColumnName_Request;		// exact column name for search query
+		$where				= $this->DB_WhereColumnName;				// SELECT * FROM tbl WHERE $where
+		$where_alias		= $this->DB_WhereColumnName_AliasedRequest;	// alias of $where column
 		
 		// BUILD SELECT STRING (METHOD 1 & 3)
 		$dbFNTempVar		= 'filename'.time().rand(100000,999999);
@@ -4902,7 +4949,7 @@ CLASS FILEMANAGER
 		}
 		
 		// INITIALIZE CORE LIBRARY
-		$task = new TASK($this->db_username, $this->db_password, $this->db_host, $this->db_database);
+		$task = new TASK($this->DB_username, $this->DB_password, $this->DB_host, $this->DB_database);
 		
 		// EXAMPLES:
 		//	?script=ui&parameter1=value1&parameter2=value2&parameter3[0]=value3
@@ -4927,12 +4974,21 @@ CLASS FILEMANAGER
 		// ?filename=example/example.jpg
 		if ( !empty ( $frvar ) ) $task( 'FILE', $frvar, [$no_cache] );
 		
-		// DATABASE QUERY METHOD 1
+		// DATABASE QUERY METHOD 1 (CUSTOM QUERY)
 		if
 		(
-			!TASK::IS_EMPTY ( $this->db_username, $this->db_password, $this->db_host, $this->db_database ) &&
-			!empty ( $dbccol1 ) &&
-			$task ( 'QUERY_ECHO', $dbccol1, [ SELF::QSTR ( $dbtable, $dbccol1, $dbselect ) ] ) == TASK::ERROR
+			!TASK::IS_EMPTY ( $this->DB_username, $this->DB_password, $this->DB_host, $this->DB_database ) &&
+			!empty ( $where_custom ) &&
+			$task
+			(
+					'QUERY_ECHO',
+					$where_custom,
+					[
+						( $this->DB_CustomQuery == '' ) ?
+						SELF::QSTR ( $dbtable, $where_custom, $dbselect ):
+						$this->DB_CustomQuery
+					]
+			) == TASK::ERROR
 		)
 		{
 			TASK::RESOURCE ( "error404" );
@@ -4941,24 +4997,24 @@ CLASS FILEMANAGER
 		// DATABASE QUERY METHOD 2
 		if
 		(
-			!TASK::IS_EMPTY ( $this->db_username, $this->db_password, $this->db_host, $this->db_database ) &&
-			!TASK::IS_EMPTY ( $dbccol2, $dbscol, $dbtable ) &&
-			$task ( 'AUTOSELECT', $dbccol2, [$dbtable, $dbscol] ) == TASK::ERROR
+			!TASK::IS_EMPTY ( $this->DB_username, $this->DB_password, $this->DB_host, $this->DB_database ) &&
+			!TASK::IS_EMPTY ( $where_noAlias, $dbscol, $dbtable ) &&
+			$task ( 'AUTOSELECT', $where_noAlias, [$dbtable, $dbscol] ) == TASK::ERROR
 		)
 		{
 			TASK::RESOURCE ( "error404" );
 		}
 		
 		// DATABASE QUERY METHOD 3
-		if ( !TASK::IS_EMPTY ( $this->db_username, $this->db_password, $this->db_host, $this->db_database ) )
+		if ( !TASK::IS_EMPTY ( $this->DB_username, $this->DB_password, $this->DB_host, $this->DB_database ) )
 		{
-			$request_keys = "$dbrkey, !$thrvar";
+			$request_keys = "$where_alias, !$thrvar";
 			$show404 = true;
 			$task
 			(
 				'QUERY',
 				$request_keys,
-				[ SELF::QSTR ( $dbtable, $dbrkey, $dbselect, $dbccol3 ) ],
+				[ SELF::QSTR ( $dbtable, $where_alias, $dbselect, $where ) ],
 				function ( $data ) use
 				(
 						$lock,
@@ -17399,6 +17455,5 @@ QmCC
 error404;
 	
 }
-
-
+}
 ?>

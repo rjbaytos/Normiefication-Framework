@@ -1,21 +1,25 @@
 <?Php
+// THIS IS A SAMPLE PAGE FOR IMPLEMENTING DEV_LIBRARY
 include('dev_library.php');
-$ai = new filemanager();
-$ai->allow_full_access_from('192.168.1.2');
-$ai->allowaccess						= true;
-$ai->db_username						= 'test';
-$ai->db_password						= 'TESTSERVER';
-$ai->db_host							= 'localhost';
-$ai->db_database						= 'test';
+$ai = new dev_library\filemanager;
+$ai->allow_full_access_from('192.168.1.2');				// THIS SHOULD ALLOW YOU TO HAVE FULL ACCESS
+$ai->allowaccess						= true;			// ALLOW LIMITED ACCESS TO FILE MANAGER
 
-$ai->Database_RequestVariable_m1		= 'id';
-$ai->Database_RequestVariable_m2		= 'name';
-$ai->Database_RequestVariable_m3		= 'imgid';
+$ai->DB_username						= 'test';		// USERNAME
+$ai->DB_password						= 'TESTSERVER';	// PASSWORD
+$ai->DB_host							= 'localhost';	// HOSTNAME
+$ai->DB_database						= 'test';		// DATABASE
 
+$ai->DB_CustomQuery						= 'SELECT name FROM file WHERE ( id = :idk AND id LIKE :idk ) LIMIT 1';
+$ai->DB_CustomQuery_AliasedRequest		= 'idk';
+
+$ai->DB_WhereColumnName_Request			= 'name';
+
+$ai->DB_WhereColumnName_AliasedRequest	= 'imgid';
 $ai->DB_Table							= 'file';
 $ai->DB_SelectDataColumn				= 'data';
 $ai->DB_SelectFilenameColumn			= 'CONCAT_WS ( ".", name, extension )';
-$ai->DB_WhereConditionColumn			= 'id';
+$ai->DB_WhereColumnName					= 'id';
 
 $ai->thumbsize							= 100;
 $ai();
