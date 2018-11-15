@@ -1,4 +1,107 @@
 <?Php
+/*/ SAMPLE IMPLEMENTATION (FILE MANAGER):
+
+<?Php
+include('dev_library.php');
+dev_library\filemanager::$AUTORUN		= false;		// RUN FILE MANAGER IMMEDIATELY WHEN INSTANTIATED
+
+$f = new dev_library\filemanager;						// INSTANTIATE FILE MANAGER
+$f->allow_full_access_from('192.168.1.2');				// THIS SHOULD ALLOW YOU TO HAVE FULL ACCESS
+
+$f->DB_alerts_disabled					= false;		// DISABLE DATABASE ALERTS
+$f->no_cache							= false;		// STOP CACHING IMAGES?
+$f->allowaccess							= true;			// ALLOW LIMITED ACCESS TO FILE MANAGER
+
+$f->AJAXTargetElement					= '.imgpreview';// TARGET ELEMENT OF FILE MANAGER AJAX LINKS
+$f->otherExtensions_add					= ['example'];	// OTHER FILE EXTENSIONS TO DETECT
+														// USE "$f->otherExtensions" TO OVERRIDE LIST
+
+// DATABASE CREDENTIALS:
+$f->DB_username							= 'root';		// USERNAME
+$f->DB_password							= 'password12';	// PASSWORD
+$f->DB_host								= 'localhost';	// HOSTNAME
+$f->DB_database							= 'test';		// DATABASE
+
+// IF YOU WANT TO CUSTOMIZE YOUR QUERY AND URL REQUEST (i.e. http://localhost/?uid=2)
+// LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
+$f->DB_CustomQuery_AliasedRequest		= 'uid';
+$f->DB_CustomQuery						= 'SELECT data FROM file WHERE ( id = :uid AND id LIKE :uid ) LIMIT 1';
+
+// IF YOU WANT TO SIMPLY USE THE COLUMN NAME IN THE DATABASE (i.e. http://localhost/?id=2)
+// LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
+$f->DB_WhereColumnName_Request			= 'id';
+
+// IF YOU WANT A CUSTOMIZED URL REQUEST AND YOU HAVE A COLUMN FOR FILENAMES (http://localhost/?imid=2)
+// LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
+$f->DB_WhereColumnName					= 'id';
+$f->DB_WhereColumnName_AliasedRequest	= 'imid';
+$f->DB_SelectFilenameColumn				= 'CONCAT_WS ( ".", name, extension )';
+
+// DATA COLUMN AND TABLE FOR THE LAST TWO METHODS (LEAVE BLANK IF YOU'RE NOT USING ANY OF THE TWO)
+$f->DB_SelectDataColumn					= 'data';
+$f->DB_Table							= 'file';
+
+// OTHER REQUEST VARIABLES
+$f->AJAXFileFetch_RequestVariable		= 'fetch';					//
+$f->DataLocation_RequestVariable		= 'dir';					//
+$f->FullImage_RequestVariable			= 'full';					//
+$f->Thumbsize_RequestVariable			= 'thumbsize';				//
+$f->File_RequestVariable				= 'filename';				//
+$f->Encode_RequestVariable				= 'encode';					//
+$f->Stream_RequestVariable				= 'media';					//
+$f->URLThumb_RequestVariable			= 'th';						//
+$f->Resource_RequestVariable			= 'resource';				//
+$f->ZipFile_RequestVariable				= 'zipfile';				//
+$f->ZipContent_RequestVariable			= 'content';				//
+$f->ZipImageContent_RequestVariable		= 'zipimg';					//
+$f->ZipThumbSource_RequestVariable		= 'zipthfile';				//
+$f->ZipThumbContent_RequestVariable		= 'zipthimg';				//
+$f->Script_RequestVariable				= 'script';					//
+$f->ScriptParameter_RequestVariables	= '*';						//
+$f->RangeStart_RequestVariable			= 'start';					//
+$f->RangeEnd_RequestVariable			= 'end';					//
+$f->WatchMedia_RequestVariable			= 'watch';					//
+$f->ListenToMedia_RequestVariable		= 'listen';					//
+
+// PROPERTIES FOR THE IMAGE PREVIEW
+$f->image_properties					= "class='imagepreview'";	//
+
+// ADJUST THUMBNAIL width/height/auto
+$f->thumbnail_adjustment_orientation	= 'auto';					//
+$f->thumbsize							= 100;						//
+
+// APPLY GZIP COMPRESSION
+dev_library\task::compress();
+
+// RUN FILE MANAGER
+$f();
+
+echo <<<BODY
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<link rel='icon' href='?resource=icon'/>
+		<title>{$_SERVER['HTTP_HOST']}</title>
+		<script type='text/javascript' src='?resource=jquery331'></script>
+		<script type='text/javascript' src='?script=ui'></script>
+		<link rel='stylesheet' href='?script=css' type='text/css'/>
+	</head>
+	<body
+			link = '#273746'
+			alink = '#273746'
+			vlink = '#273746'
+			style = 'background-attachment:fixed; text-shadow: 1px 1px 2px #000000;'
+	>
+		<script>AJAXForm('div.ajax');</script>
+		<div class='ajax'>{$f->files}</div>
+		<div class='imgpreview' style='display:inline-block;'>{$f->imdispl}</div>
+	</body>
+</html>
+BODY;
+?>
+
+/*/
 NAMESPACE { CLASS dev_library {} }
 NAMESPACE dev_library {
 	USE \finfo;					// DEFINITELY REQUIRED TO BROWSE FILES WITHIN NAMESPACE
@@ -9,16 +112,24 @@ NAMESPACE dev_library {
 	USE \PDO;					// NEEDED FOR DATABASE
 	USE \Closure;				// USED FOR PASSING ANONYMOUS FUNCTIONS AS PARAMETERS
 	USE \PDOStatement;			// USED FOR PASSING PDOStatement AS PARAMETERS
+	USE \PDOException;			// USED FOR PDO ERROR HANDLING
+	USE \Exception;				// USED FOR BASIC ERROR HANDLING
+/*///----------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+	BASIC OPERATIONS
+---------------------------------------------------------------------------------
+/*///----------------------------------------------------------------------------
 CLASS TASK
 {
-	CONST FAIL = 'invalid arguments';		// DEFAULT ERROR THROWN BY METHODS
-	CONST ERROR = 'method runtime fail';	// DEFAULT ERROR THROWN BY METHODS
-	PRIVATE STATIC $AUTODISCONNECT = TRUE;	// AUTODISCONNECT SQL CONNECTION
-	PRIVATE STATIC $FAIL  = FALSE;			// ACTIVATE OR DEACTIVATE SYSTEM FAIL
-	PRIVATE STATIC $DEBUG = FALSE;			// ACTIVATE OR DEACTIVATE DEBUG MODE
-	PRIVATE STATIC $DEATH = FALSE;			// ACTIVATE OR DEACTIVATE 'DIE' AFTER 'BIND' EXECUTION
-	PRIVATE STATIC $ANON_METHOD = NULL;		// DEFAULT ANONYMOUS FUNCTION
-	PRIVATE STATIC $HANDLE_FILE = NULL;		// DEFAULT ANONYMOUS FUNCTION FOR FILES
+	CONST FAIL	= 'invalid arguments';		// DEFAULT ERROR THROWN BY METHODS
+	CONST ERROR	= 'method runtime fail';	// DEFAULT ERROR THROWN BY METHODS
+	PRIVATE $PDO_ALERT_ENABLED		= TRUE;	// ENABLE OR DISABLE PDO CONNECTION ERROR ALERT
+	PRIVATE STATIC $AUTODISCONNECT	= TRUE;	// AUTODISCONNECT SQL CONNECTION
+	PRIVATE STATIC $FAIL			= FALSE;// ACTIVATE OR DEACTIVATE SYSTEM FAIL
+	PRIVATE STATIC $DEBUG			= FALSE;// ACTIVATE OR DEACTIVATE DEBUG MODE
+	PRIVATE STATIC $DEATH			= FALSE;// ACTIVATE OR DEACTIVATE 'DIE' AFTER 'BIND' EXECUTION
+	PRIVATE STATIC $ANON_METHOD		= NULL;	// DEFAULT ANONYMOUS FUNCTION
+	PRIVATE STATIC $HANDLE_FILE		= NULL;	// DEFAULT ANONYMOUS FUNCTION FOR FILES
 	PRIVATE STATIC $STATIC =				// PARAMETERS USED BY METHODS IN STATIC CONTEXT
 	[	'ERROR'=>''							// ERROR MESSAGES
 	];
@@ -1524,6 +1635,22 @@ CLASS TASK
 	
 	
 	/*///------------------------------------------------------------------------
+			>>> DISABLE PDO ALERT
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION DISABLE_PDO_ALERT()
+	{
+		$this->PDO_ALERT_ENABLED = FALSE;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> ENABLE PDO ALERT
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION ENABLE_PDO_ALERT()
+	{
+		$this->PDO_ALERT_ENABLED = TRUE;
+	}
+	
+	/*///------------------------------------------------------------------------
 			>>> SWITCH OFF AUTODISCONNECT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION NOAUTODISCONNECT()
@@ -2046,7 +2173,7 @@ CLASS TASK
 	}
 	
 	/*///------------------------------------------------------------------------
-			>>> DELETE EMPTY SESSION
+			>>> DELETE EMPTY SESSIONS ONLY
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION SESSION_CLEAR(): BOOL
 	{
@@ -4138,7 +4265,10 @@ CLASS TASK
 			$this->VARIABLES['CONNECTION'] = $this->PDO_CONNECT();
 			if ( $this->VARIABLES['CONNECTION'] == NULL )
 			{
-				die ( '<script type="text/javascript">alert("'.SELF::$STATIC['ERROR'].'");</script>' );
+				if ( $this->PDO_ALERT_ENABLED )
+					die ( '<script type="text/javascript">alert("'.SELF::$STATIC['ERROR'].'");</script>' );
+				else
+					return [ 'status'=>false, 'result'=>[] ];
 			}
 		}
 		
@@ -4444,7 +4574,7 @@ CLASS TASK
 
 /*///----------------------------------------------------------------------------
 ---------------------------------------------------------------------------------
-	VIDEO AND AUDIO STREAMING
+	MEDIA STREAM
 ---------------------------------------------------------------------------------
 /*///----------------------------------------------------------------------------
 CLASS MEDIA
@@ -4631,7 +4761,7 @@ CLASS MEDIA
 
 /*///----------------------------------------------------------------------------
 ---------------------------------------------------------------------------------
-	INTERFACE SCRIPTS
+	UI COMPONENTS/TOOLS
 ---------------------------------------------------------------------------------
 /*///----------------------------------------------------------------------------
 CLASS FILEMANAGER
@@ -4642,6 +4772,9 @@ CLASS FILEMANAGER
 	// RUN THE LISTENER AT CONSTRUCT
 	PUBLIC STATIC $AUTORUN			= false;						//
 	
+	// DISABLE DATABASE ERROR ALERTS
+	PUBLIC $DB_alerts_disabled		= false;						//
+	
 	// CACHE IMAGE?
 	PUBLIC $no_cache				= false;						//
 	
@@ -4651,70 +4784,82 @@ CLASS FILEMANAGER
 	// AJAX TARGET ELEMENT
 	PUBLIC $AJAXTargetElement		= 'div.imgpreview';				//
 	
+	// OTHER EXTENSIONS ALLOWED (OVERWRITE)
+	PUBLIC $otherExtensions			= [		'exe',					// executable file
+											'doc',					// word document
+											'docx',					// word document
+											'txt',					// text document
+											'mkv',					// video
+											'avi',					// video
+											'mpg',					// video
+											'lnk',					// windows shortcut
+											'torrent'				// torrent file
+									  ];
+	
+	// OTHER EXTENSIONS ALLOWED (DO NOT OVERWRITE)
+	PUBLIC $otherExtensions_add		= [];
+	
 	//////////////////////////////////////////////////////////////////
 	// DATABASE PROPERTIES
 	//////////////////////////////////////////////////////////////////
-	PUBLIC $DB_username							= '';				// i.e. 'root'
-	PUBLIC $DB_password							= '';				// i.e. 'password123'
-	PUBLIC $DB_host								= '';				// i.e. 'localhost'
-	PUBLIC $DB_database							= '';				// i.e. 'myDatabase'
+	PUBLIC $DB_username							= '';	// i.e. 'root'
+	PUBLIC $DB_password							= '';	// i.e. 'password123'
+	PUBLIC $DB_host								= '';	// i.e. 'localhost'
+	PUBLIC $DB_database							= '';	// i.e. 'myDatabase'
 	
 	//////////////////////////////////////////////////////////////////
-	// DATABASE TABLE AND COLUMN:
+	// QUERY METHODS:
 	//////////////////////////////////////////////////////////////////
-	PUBLIC $DB_Table							= '';	// i.e. 'file'
-	PUBLIC $DB_SelectDataColumn					= '';	// i.e. 'data'
-	PUBLIC $DB_SelectFilenameColumn				= '';	// i.e.: 'CONCAT_WS ( ".", name, extension )' or 'fname'
-	PUBLIC $DB_WhereColumnName					= '';	// i.e.: 'id'
-	PUBLIC $DB_CustomQuery						= '';	// i.e. SELECT data
-														//		FROM table
+	// IF YOU WANT TO CUSTOMIZE YOUR QUERY AND URL REQUEST (i.e. http://localhost/?uid=2)
+	// LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
+	PUBLIC $DB_CustomQuery_AliasedRequest		= '';	// i.e. 'uid'
+	PUBLIC $DB_CustomQuery						= '';	// i.e. SELECT dataColumn
+														//		FROM tableName
 														//		WHERE
 														//		(
-														//			column = :$DB_CustomQuery_AliasedRequest
+														//			columnName = :uid
 														//			AND
-														//			column LIKE :$DB_CustomQuery_AliasedRequest
+														//			columnName LIKE :uid
 														//		)
 														//		LIMIT 1;
 	
-	//////////////////////////////////////////////////////////////////
-	// POST/GET/REQUEST VARIABLE NAMES (DATABASE):
-	//////////////////////////////////////////////////////////////////
-	PUBLIC $DB_CustomQuery_AliasedRequest		= '';				// i.e. 'id'
-	PUBLIC $DB_WhereColumnName_Request			= '';				// i.e. 'name'
-	PUBLIC $DB_WhereColumnName_AliasedRequest	= '';				// i.e. 'imgid'
-	// DB_CustomQuery_AliasedRequest
-	//		DATABASE COLUMN REQUEST
-	//			i.e. http://localhost?id=1
-	// DB_WhereColumnName_Request
-	//		DATABASE COLUMN REQUEST (USE EXACT COLUMN NAME FOUND IN DATABASE)
-	//			i.e. http://localhost?name=filename
-	// DB_WhereColumnName_AliasedRequest
-	//		DATABASE COLUMN REQUEST (USE AN ALIAS FOR THE DATABASE COLUMN 'DB_WhereColumnName')
-	//			i.e. http://localhost?imgid=1
+	// IF YOU WANT TO SIMPLY USE THE COLUMN NAME IN THE DATABASE (i.e. http://localhost/?id=2)
+	// LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
+	PUBLIC $DB_WhereColumnName_Request			= '';	// i.e. 'id'
+	
+	// IF YOU WANT A CUSTOMIZED URL REQUEST AND YOU HAVE A COLUMN FOR FILENAMES (http://localhost/?imid=2)
+	// LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
+	PUBLIC $DB_WhereColumnName					= '';	// i.e. 'id'
+	PUBLIC $DB_WhereColumnName_AliasedRequest	= '';	// i.e. 'imgid'
+	PUBLIC $DB_SelectFilenameColumn				= '';	// i.e. 'CONCAT_WS ( ".", name, extension )' or 'fname'
+	
+	// DATA COLUMN AND TABLE FOR THE LAST TWO METHODS (LEAVE BLANK IF YOU'RE NOT USING ANY OF THE TWO)
+	PUBLIC $DB_SelectDataColumn					= '';	// i.e. 'data'
+	PUBLIC $DB_Table							= '';	// i.e. 'file'
 	
 	//////////////////////////////////////////////////////////////////
 	// POST/GET/REQUEST VARIABLE NAMES (UI):
 	//////////////////////////////////////////////////////////////////
-	PUBLIC $AJAXFileFetch_RequestVariable		= 'fetch';			//
-	PUBLIC $DataLocation_RequestVariable		= 'dir';			//
-	PUBLIC $FullImage_RequestVariable			= 'full';			//
-	PUBLIC $Thumbsize_RequestVariable			= 'thumbsize';		//
-	PUBLIC $File_RequestVariable				= 'filename';		//
-	PUBLIC $Encode_RequestVariable				= 'encode';			//
-	PUBLIC $Stream_RequestVariable				= 'media';			//
-	PUBLIC $URLThumb_RequestVariable			= 'th';				//
-	PUBLIC $Resource_RequestVariable			= 'resource';		//
-	PUBLIC $ZipFile_RequestVariable				= 'zipfile';		//
-	PUBLIC $ZipContent_RequestVariable			= 'content';		//
-	PUBLIC $ZipImageContent_RequestVariable		= 'zipimg';			//
-	PUBLIC $ZipThumbSource_RequestVariable		= 'zipthfile';		//
-	PUBLIC $ZipThumbContent_RequestVariable		= 'zipthimg';		//
-	PUBLIC $Script_RequestVariable				= 'script';			//
-	PUBLIC $ScriptParameter_RequestVariables	= '*';				//
-	PUBLIC $RangeStart_RequestVariable			= 'start';			//
-	PUBLIC $RangeEnd_RequestVariable			= 'end';			//
-	PUBLIC $WatchMedia_RequestVariable			= 'watch';			//
-	PUBLIC $ListenToMedia_RequestVariable		= 'listen';			//
+	PUBLIC $AJAXFileFetch_RequestVariable		= 'fetch';
+	PUBLIC $DataLocation_RequestVariable		= 'dir';
+	PUBLIC $FullImage_RequestVariable			= 'full';
+	PUBLIC $Thumbsize_RequestVariable			= 'thumbsize';
+	PUBLIC $File_RequestVariable				= 'filename';
+	PUBLIC $Encode_RequestVariable				= 'encode';
+	PUBLIC $Stream_RequestVariable				= 'media';
+	PUBLIC $URLThumb_RequestVariable			= 'th';
+	PUBLIC $Resource_RequestVariable			= 'resource';
+	PUBLIC $ZipFile_RequestVariable				= 'zipfile';
+	PUBLIC $ZipContent_RequestVariable			= 'content';
+	PUBLIC $ZipImageContent_RequestVariable		= 'zipimg';
+	PUBLIC $ZipThumbSource_RequestVariable		= 'zipthfile';
+	PUBLIC $ZipThumbContent_RequestVariable		= 'zipthimg';
+	PUBLIC $Script_RequestVariable				= 'script';
+	PUBLIC $ScriptParameter_RequestVariables	= '*';
+	PUBLIC $RangeStart_RequestVariable			= 'start';
+	PUBLIC $RangeEnd_RequestVariable			= 'end';
+	PUBLIC $WatchMedia_RequestVariable			= 'watch';
+	PUBLIC $ListenToMedia_RequestVariable		= 'listen';
 	// AJAXFileFetch_RequestVariable
 	//		REQUEST VARIABLE NAME AUTO-APPENDED BY SYSTEM FOR IDENIFYING AJAX LINKS.
 	//		WHEN ADDED TO A FILE URL, THE SYSTEM WILL DISPLAY THE FILE BROWSER HTML/UI
@@ -4787,7 +4932,7 @@ CLASS FILEMANAGER
 	PUBLIC $thumbsize							= 100;
 	
 	//////////////////////////////////////////////////////////////////
-	// OUTPUT HTML STRING INITIALIZATION
+	// OUTPUT HTML STRING
 	//////////////////////////////////////////////////////////////////
 	PUBLIC $files								= '';
 	PUBLIC $imdispl								= '';
@@ -4848,13 +4993,14 @@ CLASS FILEMANAGER
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION LISTEN()
 	{
+		// START CONTROLLING CONNECTIONS
 		$this->BLOCK_CONNECTIONS();
-		
-		// SET CONTENT-ENCODING TO GZIP (APPLY GZIP COMPRESSION)
-		TASK::COMPRESS();
 		
 		// ELEMENT THAT DISPLAYS IMAGES, VIDEOS, AND MUSIC UPON AJAX REQUEST
 		$AJAXTargetElement	= $this->AJAXTargetElement;
+		
+		// OTHER EXTENSIONS ALLOWED BY FILE MANAGER
+		$miscExtensions		= array_merge ( $this->otherExtensions, $this->otherExtensions_add );
 		
 		// REQUEST VARIABLE NAMES:
 		$uirvar				= $this->AJAXFileFetch_RequestVariable;
@@ -4949,7 +5095,9 @@ CLASS FILEMANAGER
 		}
 		
 		// INITIALIZE CORE LIBRARY
-		$task = new TASK($this->DB_username, $this->DB_password, $this->DB_host, $this->DB_database);
+		$task = new TASK();
+		if ( $this->DB_alerts_disabled ) $task->DISABLE_PDO_ALERT();
+		$task($this->DB_username, $this->DB_password, $this->DB_host, $this->DB_database);
 		
 		// EXAMPLES:
 		//	?script=ui&parameter1=value1&parameter2=value2&parameter3[0]=value3
@@ -5075,14 +5223,14 @@ CLASS FILEMANAGER
 		$folder = (	!isset ( $_REQUEST[$rlisten] ) ) ? $folder :
 					rawurlencode ( dirname ( rawurldecode ( $_REQUEST[$rlisten] ) ) );
 		$this->files = "\r\n\t\t<script>AJAXLink('div.ajax', 'a.ajax', '&{$uirvar}');</script>";
-		$this->files .= gui::style ($lock, $thumbsize);
-		$this->files .= gui::disks($locrvar, $environment);
+		$this->files .= GUI_ELEMENTS::STYLE ($lock, $thumbsize);
+		$this->files .= GUI_ELEMENTS::DISKS($locrvar, $environment);
 		$this->files .= (	!isset ( $_REQUEST[$rwatch] ) ) ? '' :
-							gui::icon($folder, $locrvar, $thumbsize, $environment).
-							gui::video($_REQUEST[$rwatch], $strvar, $frvar);
+							GUI_ELEMENTS::ICON($folder, $locrvar, $thumbsize, $environment).
+							GUI_ELEMENTS::VIDEO($_REQUEST[$rwatch], $strvar, $frvar);
 		$this->files .= (	!isset ( $_REQUEST[$rlisten] ) ) ? '' :
-							gui::icon($folder, $locrvar, $thumbsize, $environment).
-							gui::audio($_REQUEST[$rlisten], $strvar, $frvar);
+							GUI_ELEMENTS::ICON($folder, $locrvar, $thumbsize, $environment).
+							GUI_ELEMENTS::AUDIO($_REQUEST[$rlisten], $strvar, $frvar);
 		$this->files .= ( $taskresult = $task
 		(
 			'FOLDER', $getVariables, [true],
@@ -5105,11 +5253,11 @@ CLASS FILEMANAGER
 					$locrvar,
 					$rwatch,
 					$rlisten,
-					$AJAXTargetElement
+					$AJAXTargetElement,
+					$miscExtensions
 			)
 			{
 				$resstring = '';
-				$allowedExtensions = ['exe', 'doc', 'txt', 'mkv', 'avi', 'mpg', 'lnk', 'torrent'];
 				$ImageAnchorProperties = "class='ajax' target='$AJAXTargetElement'";
 				$start = 1;
 				$end = $limit;
@@ -5123,13 +5271,13 @@ CLASS FILEMANAGER
 					if ( $end > $result['count'] ) $end = $result['count'];
 					if ( $s != $start || $e < $end )
 					{
-						$resstring .= gui::icon(
+						$resstring .= GUI_ELEMENTS::ICON (
 											$folderurl,
 											$locrvar,
 											$thumbsize,
 											"&{$rstart}={$start}&{$rend}={$end}&{$thrvar}={$thumbsize}",
 											"[ ({$start}-{$end}) of {$result['count']} ]"
-									);
+										);
 					}
 					$start = $end + 1;
 					$end = $start + $step;
@@ -5142,7 +5290,7 @@ CLASS FILEMANAGER
 					$extension = strtolower ( pathinfo ( $fn, PATHINFO_EXTENSION ) );
 					if ( is_dir ( $fn ) )
 					{
-						$resstring .= gui::icon ( $fileResult, $locrvar, $thumbsize, $environment );
+						$resstring .= GUI_ELEMENTS::ICON ( $fileResult, $locrvar, $thumbsize, $environment );
 					}
 					else if ( $extension == 'lnk' && TASK::IS_SHORTCUT ( $fn ) )
 					{
@@ -5154,26 +5302,32 @@ CLASS FILEMANAGER
 							{
 								$rn .= $lnkn [ $lnkctr ];
 							}
-							$resstring .= gui::icon ( $truepath, $locrvar, $thumbsize, $environment, $rn );
+							$resstring .= GUI_ELEMENTS::ICON (
+												$truepath,
+												$locrvar,
+												$thumbsize,
+												$environment,
+												$rn
+											);
 						}
 					}
-					else if ( GUI::IS_AUDIO ( $fn, $mimetype, $extension ) )
+					else if ( GUI_ELEMENTS::IS_AUDIO ( $fn, $mimetype, $extension ) )
 					{
-						$resstring .= gui::icon($fileResult, $rlisten, $thumbsize);
+						$resstring .= GUI_ELEMENTS::ICON ( $fileResult, $rlisten, $thumbsize );
 					}
-					else if ( GUI::IS_VIDEO ( $fn, $mimetype, $extension ) )
+					else if ( GUI_ELEMENTS::IS_VIDEO ( $fn, $mimetype, $extension ) )
 					{
-						$resstring .= gui::icon($fileResult, $rwatch, $thumbsize);
+						$resstring .= GUI_ELEMENTS::ICON ( $fileResult, $rwatch, $thumbsize );
 					}
-					else if ( GUI::IS_IMAGE ( $fn, $mimetype, $extension ) )
+					else if ( GUI_ELEMENTS::IS_IMAGE ( $fn, $mimetype, $extension ) )
 					{
-						$resstring .= gui::thumbnail(
+						$resstring .= GUI_ELEMENTS::THUMBNAIL (
 											$fileResult,
 											"{$extras}{$irvar}",
 											$urlthvar,
 											$ImageAnchorProperties,
 											$thumbsize
-									);
+										);
 					}
 					else if ( is_file ( $fn ) && $extension == 'zip' )
 					{
@@ -5182,8 +5336,7 @@ CLASS FILEMANAGER
 						$zipContentKeys = "{$zipcrvar}, {$zipirvar}";
 						$zipThumbnailKey = $zipthfrvar;
 						$zipThumbnailContentKey = $zipthcrvar;
-						$resstring .= gui::zip
-											(
+						$resstring .= GUI_ELEMENTS::ZIP (
 												$fileResult,
 												$rstart,
 												$rend,
@@ -5201,11 +5354,17 @@ CLASS FILEMANAGER
 					else if ( is_file ( $fn ) && $extension == 'ico' )
 					{
 						$linkProps = "target='_blank'";
-						$resstring .= gui::thumbnail ( $fileResult, $frvar, $frvar, $linkProps, $thumbsize);
+						$resstring .= GUI_ELEMENTS::THUMBNAIL (
+											$fileResult,
+											$frvar,
+											$frvar,
+											$linkProps,
+											$thumbsize
+										);
 					}
-					else if ( is_file ( $fn ) && in_array ( $extension, $allowedExtensions ) )
+					else if ( is_file ( $fn ) && in_array ( $extension, $miscExtensions ) )
 					{
-						$resstring .= gui::icon($fileResult, $frvar, $thumbsize);
+						$resstring .= GUI_ELEMENTS::ICON ( $fileResult, $frvar, $thumbsize );
 					}
 				}
 				return $resstring;
@@ -5235,7 +5394,7 @@ CLASS FILEMANAGER
 }
 
 
-CLASS GUI
+CLASS GUI_ELEMENTS
 {
 	PUBLIC STATIC $VIDEO_MIME = [	// ACCEPTED VIDEO MIME TYPES
 									'video/mp4',
@@ -5406,7 +5565,7 @@ CLASS GUI
 	
 	/*///------------------------------------------------------------------------
 	-----------------------------------------------------------------------------
-*		GUI BUILDER
+*		ELEMENT BUILDER
 	-----------------------------------------------------------------------------
 	/*///------------------------------------------------------------------------
 	
