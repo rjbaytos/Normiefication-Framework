@@ -2,15 +2,9 @@
 This library is an on-going project. It's basically a compilation of the tools to make web development easier. It has only been tested so far on WAMP 3.1.0 (Apache 2.4.27, Php 7.1.9, MySQL 5.7.19), Windows 8.1 and Windows 10. There's no guarantee that it will work on a web hosting service.
 
 Tools:
-1. Tasks (dev_library\tasks) - Contains the basic tasks/functionalities such as browsing files, resizing images, connecting to the database, and etc.
+1. Tasks (dev_library\tasks) - Contains the basic tasks/functionalities such as browsing files, resizing images, connecting to the database, and etc. Follows a JQuery-like syntax.
   * SYNTAX:
-  $classInstance (
-      {string} task,
-      {string} requestVariableKey,
-      {string} requestType,
-      {array} taskParameters,
-      {closure} function($results){ ... }
-  );
+  * $classInstance ( {string}task, {string}requestVariableKey, {string}requestType, {array}taskParameters, {closure}function($results){ ... } );
     - {string} task | Name of the task to perform (function name or the corresponding alias).
     - {string} requestVariableKey | the name of REQUEST/GET/POST variable (i.e. http://localhost/?requestVariableKey=value) to bind.
     - {string} requestType | OPTIONAL. Choose between 'REQUEST', 'GET', and 'POST'.
