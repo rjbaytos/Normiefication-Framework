@@ -1,0 +1,62 @@
+Examples:
+1. Media (Video/Audio) Streaming - Make the server listen to GET/POST/REQUEST for video and audio.
+<?Php
+	include('dev_library.php');
+	$task = new dev_library\task;
+	$task('media', 'stream'); // http://localhost/thisFile.php?stream=path/to/my/video.mp4
+?>
+
+2. Any File (images/programs/text files/etc) - Make the server listen to GET/POST/REQUEST for any file.
+<?Php
+	include('dev_library.php');
+	$task = new dev_library\task;
+	$cacheFiles = true;
+	$task('file', 'location', [$cacheFiles]);
+?>
+
+3. Image Thumbnail - Make the server listen to GET/POST/REQUEST for image files and create thumbnail.
+<?Php
+	include('dev_library.php');
+	$task = new dev_library\task;
+	$size = 200; // px
+	$adjustmentDimension = 'width' // 'width', 'height', or 'auto' to choose the largest dimension
+	$cacheFiles = true;
+	$task('urlthumb', 'location', [$size, adjustmentDimension, $cacheFiles]);
+?>
+
+4. Zip Content - Make the server listen to GET/POST/REQUEST to get Zipped content.
+<?Php
+	include('dev_library.php');
+	$task = new dev_library\task;
+	$cacheFiles = true;
+	$task('zip', 'zipFile, zipContent', [$cacheFiles]);
+?>
+
+5. Zip Content - Make the server listen to GET/POST/REQUEST to create thumbnail from Zipped image file.
+<?Php
+	include('dev_library.php');
+	$task = new dev_library\task;
+	$size = 200; // px
+	$adjustmentDimension = 'width' // 'width', 'height', or 'auto' to choose the largest dimension
+	$cacheFiles = true;
+	$task('zipthumb', 'zipFile, zipContent', [$size, adjustmentDimension, $cacheFiles]);
+?>
+
+6. Combining all in one script:
+<?Php
+	include('dev_library.php');
+	$fileImageNoCache = true; // Do not cache file?
+	$task = new dev_library\task;
+	$task('media', 'media', 'GET');
+
+	// constraint can be 'width' / 'height' / 'auto'
+	// auto - constrain the largest dimension to px size
+
+	$task('file', 'file', 'GET', [$fileImageNoCache]);
+	$task('urlthumb', 'th', 'GET', [200, 'auto', $fileImageNoCache]);
+
+	$task('zip', 'zip, content', 'GET', [$fileImageNoCache]);
+	$task('zipthumb', 'zip_th, content_th', 'GET', [200, 'auto', $fileImageNoCache]);
+?>
+
+7. Implementing File Manager - Check filemanager.php
