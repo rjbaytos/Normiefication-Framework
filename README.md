@@ -11,16 +11,11 @@ Tools:
       {array} taskParameters,
       {closure} function($results){ ... }
   );
-    - {string} task
-      Name of the task to perform (function name or the corresponding alias).
-    - {string} requestVariableKey
-      the name of REQUEST/GET/POST variable (i.e. http://localhost/?requestVariableKey=value) to bind.
-    - {string} requestType
-      OPTIONAL. Choose between 'REQUEST', 'GET', and 'POST'.
-    - {array} taskParameters
-      OPTIONAL (DEPENDING ON TASK). Additional parameters for the task.
-    - {closure} function($results){ ... }
-      OPTIONAL. Get the $results array and process it using your own code instead of the default.
+    - {string} task | Name of the task to perform (function name or the corresponding alias).
+    - {string} requestVariableKey | the name of REQUEST/GET/POST variable (i.e. http://localhost/?requestVariableKey=value) to bind.
+    - {string} requestType | OPTIONAL. Choose between 'REQUEST', 'GET', and 'POST'.
+    - {array} taskParameters | OPTIONAL (DEPENDING ON TASK). Additional parameters for the task.
+    - {closure} function($results){ ... } | OPTIONAL. Get the $results array and process it using your own code instead of the default.
 
 2. Media (dev_library\media) - Contains the tools for media (audio/video) streaming.
 
@@ -32,4 +27,4 @@ Tools:
 
 6. Files (dev_library\Files) - Contains base64 encoded resources such as image files, icons, and the default JQuery library used by the File Manager.
 
-for sammple implementations, see examples.txt
+<for sample implementations, see examples.txt>
