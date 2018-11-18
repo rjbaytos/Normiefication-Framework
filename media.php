@@ -8,10 +8,10 @@ $task('media', 'media', 'GET');
 // auto - constrain the largest dimension to px size
 
 $task('file', 'file', 'GET', [$fileImageNoCache]);
-$task('urlthumb', 'th', 'GET', [200, 'auto', $fileImageNoCache]);
+$task('urlthumb', 'th, size', 'GET', ['auto', $fileImageNoCache]);
 
 $task('zip', 'zip, content', 'GET', [$fileImageNoCache]);
-$task('zipthumb', 'zip_th, content_th', 'GET', [200, 'auto', $fileImageNoCache]);
+$task('zipthumb', 'zip_th, content_th, size', 'GET', ['auto', $fileImageNoCache]);
 ?>
 
 using media function:<br/>

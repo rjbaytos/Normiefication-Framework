@@ -19,9 +19,9 @@ Examples:
 	include('dev_library.php');
 	$task = new dev_library\task;
 	$size = 200; // px
-	$adjustmentDimension = 'width' // 'width', 'height', or 'auto' to choose the largest dimension
+	$adjustmentDimension = 'width'; // 'width', 'height', or 'auto' to choose the largest dimension
 	$cacheFiles = true;
-	$task('urlthumb', 'location', [$size, adjustmentDimension, $cacheFiles]);
+	$task('urlthumb', 'location', [$size, $adjustmentDimension, $cacheFiles]);
 ?>
 
 4. Zip Content - Make the server listen to GET/POST/REQUEST to get Zipped content.
@@ -37,9 +37,9 @@ Examples:
 	include('dev_library.php');
 	$task = new dev_library\task;
 	$size = 200; // px
-	$adjustmentDimension = 'width' // 'width', 'height', or 'auto' to choose the largest dimension
+	$adjustmentDimension = 'width'; // 'width', 'height', or 'auto' to choose the largest dimension
 	$cacheFiles = true;
-	$task('zipthumb', 'zipFile, zipContent', [$size, adjustmentDimension, $cacheFiles]);
+	$task('zipthumb', 'zipFile, zipContent', [$size, $adjustmentDimension, $cacheFiles]);
 ?>
 
 6. Combining all in one script:
