@@ -62,7 +62,7 @@ Examples:
 7. Implementing File Manager:
 <?Php
 include('normiefication.php');
-normiefication\filemanager::$AUTORUN		= false;	// RUN FILE MANAGER IMMEDIATELY WHEN INSTANTIATED
+normiefication\filemanager::$AUTORUN	= false;		// RUN FILE MANAGER IMMEDIATELY WHEN INSTANTIATED
 
 $f = new normiefication\filemanager;					// INSTANTIATE FILE MANAGER
 $f->allow_full_access_from('192.168.1.2');				// THIS SHOULD ALLOW YOU TO HAVE FULL ACCESS
@@ -81,10 +81,14 @@ $f->DB_password							= 'password1';	// PASSWORD
 $f->DB_host								= 'localhost';	// HOSTNAME
 $f->DB_database							= 'MyDatabase';	// DATABASE
 
-// IF YOU WANT TO CUSTOMIZE YOUR QUERY AND URL REQUEST (i.e. http://localhost/?uid=2)
+// IF YOU WANT TO CUSTOMIZE YOUR QUERY AND URL REQUEST (i.e. http://localhost/?uid=2&n=filename)
 // LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
-$f->DB_CustomQuery_AliasedRequest		= 'uid';
-$f->DB_CustomQuery						= 'SELECT data FROM file WHERE ( id = :uid AND id LIKE :uid ) LIMIT 1';
+$f->DB_CustomQuery_AliasedRequest		= 'uid, n';
+$f->DB_CustomQuery						= // PREPARED STATEMENT WILL BIND $_REQUEST['KEY'] TO :KEY
+<<<QUERY
+SELECT data FROM file
+WHERE ( id = :uid AND id LIKE :uid ) AND ( name = :n AND name LIKE :n ) LIMIT 1
+QUERY;
 
 // IF YOU WANT TO SIMPLY USE THE COLUMN NAME IN THE DATABASE (i.e. http://localhost/?id=2)
 // LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
