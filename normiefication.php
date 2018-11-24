@@ -1,9 +1,9 @@
 <?Php
 NAMESPACE { CLASS normiefication {} }
 NAMESPACE normiefication {
-	USE \finfo;					// DEFINITELY REQUIRED TO BROWSE FILES WITHIN NAMESPACE
-	USE \ReflectionMethod;		// REQUIRED TO MAKE ALL THE LITTLE FUNCTIONALITIES WORK
-	USE \ReflectionFunction;	// NOT SURE IF THIS IS NEEDED
+	USE \finfo;					// REQUIRED FOR BROWSING FILES
+	USE \ReflectionMethod;		// REQUIRED FOR ANALYZING METHODS
+	USE \ReflectionFunction;	// REQUIRED SO THAT WE CAN REFLECT ANONYMOUS FUNCTIONS
 	USE \COM;					// REQUIRED FOR BROWSING FILES AND RUNNING BATCH WITHIN NAMESPACE
 	USE \ziparchive;			// REQUIRED FOR READING ZIP ARCHIVES
 	USE \PDO;					// NEEDED FOR DATABASE
@@ -4134,7 +4134,8 @@ CLASS TASK
 		
 		// PREPARE ARGUMENTS AND EXECUTE QUERY
 		$arguments = [ $me->query, $me->parameters, $me->skip, $me->read_all, $me->read ];
-		return SELF::ARRAY_RECURSIVE_LOOP ( $this->PDO_QUERY (...$arguments)['result'], $me->action );
+		$action = $me->action;
+		return SELF::ARRAY_RECURSIVE_LOOP ( $this->PDO_QUERY (...$arguments)['result'], $action );
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -4393,6 +4394,7 @@ CLASS TASK
 		
 		// PREPARE THE ARGUMENTS
 		$args = [ $me->table, $me->columns, $me->operator, $me->skip, $me->read_all, $me->read ];
+		$action = $me->action;
 		
 		// EXECUTE
 		$result = $this->PDO_SELECT_AUTO(...$args);
@@ -4401,7 +4403,7 @@ CLASS TASK
 		if ( count ( $result ) == 0 ) return null;
 		
 		// DISPLAY RESULT IF SUCCESSFUL
-		return SELF::ARRAY_RECURSIVE_LOOP ( $result['result'], $me->action );
+		return SELF::ARRAY_RECURSIVE_LOOP ( $result['result'], $action );
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -4722,6 +4724,10 @@ CLASS FILEMANAGER
 														//			columnName LIKE :uid
 														//		)
 														//		LIMIT 1;
+	PUBLIC $DB_CustomQuery_Action				= NULL;	// i.e. function ( $result )
+														//		{
+														//			process ( $result );
+														//		}
 	
 	// IF YOU WANT TO SIMPLY USE THE COLUMN NAME IN THE DATABASE (i.e. http://localhost/?id=2)
 	// LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
@@ -5029,13 +5035,14 @@ CLASS FILEMANAGER
 			!empty ( $where_custom ) &&
 			$task
 			(
-					'QUERY_ECHO',
+					( TASK::VAR_TYPE ( $this->DB_CustomQuery_Action ) !== 'CLOSURE' ) ? 'QUERY_ECHO' : 'QUERY',
 					$where_custom,
 					[
 						( $this->DB_CustomQuery == '' ) ?
 						SELF::QSTR ( $dbtable, $where_custom, $dbselect ):
 						$this->DB_CustomQuery
-					]
+					],
+					$this->DB_CustomQuery_Action
 			) == TASK::ERROR
 		)
 		{

@@ -84,11 +84,30 @@ $f->DB_database							= 'MyDatabase';	// DATABASE
 // IF YOU WANT TO CUSTOMIZE YOUR QUERY AND URL REQUEST (i.e. http://localhost/?uid=2&n=filename)
 // LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
 $f->DB_CustomQuery_AliasedRequest		= 'uid, n';
-$f->DB_CustomQuery						= // PREPARED STATEMENT WILL BIND $_REQUEST['KEY'] TO :KEY
+$f->DB_CustomQuery						=				// PREPARED STATEMENT WILL BIND $_REQUEST['KEY'] TO :KEY
 <<<QUERY
-SELECT data FROM file
-WHERE ( id = :uid AND id LIKE :uid ) AND ( name = :n AND name LIKE :n ) LIMIT 1
+	SELECT data, CONCAT_WS ( ".", name, extension ) AS filename FROM file
+	WHERE ( id = :uid AND id LIKE :uid ) AND ( name = :n AND name LIKE :n ) LIMIT 1
 QUERY;
+$f->DB_CustomQuery_Action				= NULL;			// WHAT YOU WANT TO DO WITH THE RESULTS
+/*
+				i.e.
+				function ( $result )
+				{
+					if ( count ( $result ) < 1 ) normiefication\task::resource ( "error404" );
+					$contentType = ( new finfo ( FILEINFO_MIME_TYPE ) )->buffer ( $result[0]['data'] );
+					if ( stripos ( $contentType, 'text' ) === false )
+					{
+						header ("Content-Type: {$contentType}");
+						header ("Content-Disposition: FileName=\"{$result[0]['filename']}\"");
+						echo $result[0]['data'];
+						die;
+					}
+					// ECHO AND RETURN THE DATA BY DEFAULT
+					echo $result[0]['data'];
+					die;
+				}
+*/
 
 // IF YOU WANT TO SIMPLY USE THE COLUMN NAME IN THE DATABASE (i.e. http://localhost/?id=2)
 // LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
