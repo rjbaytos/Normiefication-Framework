@@ -4683,8 +4683,8 @@ CLASS FILEMANAGER
 	// OPEN FILE MANAGER TO THE INTERNET
 	PUBLIC $allowaccess				= false;						//
 	
-	// AJAX TARGET ELEMENT
-	PUBLIC $AJAXTargetElement		= 'div.imgpreview';				//
+	// AJAX TARGET OVERLAY ELEMENT
+	PUBLIC $AJAXOverlayElement		= 'div.overlay';				// i.e. div.divClass#divID
 	
 	// OTHER EXTENSIONS ALLOWED (OVERWRITE)
 	PUBLIC $otherExtensions			= [		'exe',					// executable file
@@ -4903,7 +4903,7 @@ CLASS FILEMANAGER
 		$this->BLOCK_CONNECTIONS();
 		
 		// ELEMENT THAT DISPLAYS IMAGES, VIDEOS, AND MUSIC UPON AJAX REQUEST
-		$AJAXTargetElement	= $this->AJAXTargetElement;
+		$AJAXOverlayElement	= $this->AJAXOverlayElement;
 		
 		// OTHER EXTENSIONS ALLOWED BY FILE MANAGER
 		$miscExtensions		= array_merge ( $this->otherExtensions, $this->otherExtensions_add );
@@ -5160,12 +5160,12 @@ CLASS FILEMANAGER
 					$locrvar,
 					$rwatch,
 					$rlisten,
-					$AJAXTargetElement,
+					$AJAXOverlayElement,
 					$miscExtensions
 			)
 			{
 				$resstring = '';
-				$ImageAnchorProperties = "class='ajax' target='$AJAXTargetElement'";
+				$ImageAnchorProperties = "class='ajax' target='$AJAXOverlayElement'";
 				$start = 1;
 				$end = $limit;
 				$step = $end - $start;
@@ -6531,6 +6531,20 @@ function loader(targetElement,loading_style)
 	});
 }
 
+// ADD CONTROLS TO SELECTED OVERLAY ELEMENT
+function AJAXOverlayControls ( target )
+{
+	if ( typeof target === 'undefined' ) return false;
+	$(function(){
+		$(target).click(function(){
+			$(this).fadeOut(100, function(){
+				$(this).css( "display", "none" );
+			});
+		});
+	});
+	return true;
+}
+
 // CREATE AJAX LINKS
 function AJAXLink ( target, source, insert, attrib, rungif )
 {
@@ -6992,17 +7006,23 @@ SCRIPT
 		echo str_replace ( "\r\n", "\r\n" . TASK::STRING_OF ( "\t", $tabs ),
 <<<SCRIPT
 img.imagepreview {
-	width:						100%;
+	max-width:					100%;
+	max-height:					100%;
 }
 
 div.overlay {
-	position:					absolute;
+	background-color:			black;
+	position:					fixed;
+	display:					none;
+	width:						100%;
+	height:						100%;
 	top:						0;
 	bottom:						0;
 	left:						0;
 	right:						0;
-	background-color:			#000000;
-	visibility:					hidden;
+	overflow:					hidden;
+	text-align:					center;
+	vertical-align:				middle;
 }
 
 img.thumbnail,

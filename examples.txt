@@ -71,7 +71,7 @@ $f->DB_alerts_disabled					= false;		// DISABLE DATABASE ALERTS
 $f->no_cache							= false;		// STOP CACHING IMAGES?
 $f->allowaccess							= true;			// ALLOW LIMITED ACCESS TO FILE MANAGER
 
-$f->AJAXTargetElement					= '.imgpreview';// TARGET ELEMENT OF FILE MANAGER AJAX LINKS
+$f->AJAXOverlayElement					= '.overlay';	// TARGET ELEMENT OF FILE MANAGER AJAX LINKS
 $f->otherExtensions_add					= ['example'];	// OTHER FILE EXTENSIONS TO DETECT
 														// USE "$f->otherExtensions" TO OVERRIDE LIST
 
@@ -168,6 +168,7 @@ echo <<<BODY
 		<script type='text/javascript' src='?resource=jquery331'></script>
 		<script type='text/javascript' src='?script=ui'></script>
 		<link rel='stylesheet' href='?script=css' type='text/css'/>
+		<script>AJAXOverlayControls("div.overlay");</script>
 	</head>
 	<body
 			background = '?resource=bg'
@@ -184,7 +185,7 @@ echo <<<BODY
 	>
 		<script>AJAXForm('div.ajax');</script>
 		<div class='ajax'>{$f->files}</div>
-		<div class='imgpreview' style='display:inline-block;'>{$f->imdispl}</div>
+		<div class='overlay'>{$f->imdispl}</div>
 	</body>
 </html>
 BODY;
