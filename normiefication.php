@@ -27,8 +27,9 @@ CLASS TASK
 	PRIVATE STATIC $DEATH			= FALSE;	// ACTIVATE OR DEACTIVATE 'DIE' AFTER 'BIND' EXECUTION
 	PRIVATE STATIC $ANON_METHOD		= NULL;		// DEFAULT ANONYMOUS FUNCTION
 	PRIVATE STATIC $HANDLE_FILE		= NULL;		// DEFAULT ANONYMOUS FUNCTION FOR FILES
-	PRIVATE STATIC $WORKDIR			= '';		// WORKING DIRECTORY
-	PRIVATE STATIC $ROOTDIR			= '';		// ROOT DIRECTORY
+	PRIVATE STATIC $BEYONDROOT		= FALSE;	// ALLOW ACCESS BEYOND ROOT DIRECTORY FOR 'FOLDER' FUNCTION
+	PRIVATE STATIC $ROOTDIR			= '';		// CUSTOM ROOT DIRECTORY FOR 'FOLDER' FUNCTION
+	PRIVATE STATIC $WORKDIR			= '';		// CUSTOM WORKING DIRECTORY FOR 'FOLDER' FUNCTION
 	PRIVATE STATIC $STATIC =					// PARAMETERS USED BY METHODS IN STATIC CONTEXT
 	[	'ERROR'=>''								// ERROR MESSAGES
 	];
@@ -1614,14 +1615,11 @@ CLASS TASK
 	}
 	
 	/*///------------------------------------------------------------------------
-			>>> SET WORK DIRECTORY FOR FOLDER READER
+			>>> SWITCH ON FOLDER ACCESS BEYOND ROOT DIRECTORY
 	/*///------------------------------------------------------------------------
-	FINAL PUBLIC STATIC FUNCTION WORKDIR
-	(
-			string $directory = ''	// DIRECTORY
-	)
+	FINAL PUBLIC STATIC FUNCTION BEYONDROOT()
 	{
-		SELF::$WORKDIR = is_dir ( realpath ( $directory ) ) ? $directory : getcwd();
+		SELF::$BEYONDROOT = TRUE;
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -1633,6 +1631,17 @@ CLASS TASK
 	)
 	{
 		SELF::$ROOTDIR = is_dir ( realpath ( $directory ) ) ? $directory : getcwd();
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET WORK DIRECTORY FOR FOLDER READER
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION WORKDIR
+	(
+			string $directory = ''	// DIRECTORY
+	)
+	{
+		SELF::$WORKDIR = is_dir ( realpath ( $directory ) ) ? $directory : getcwd();
 	}
 	
 	
@@ -2284,7 +2293,7 @@ CLASS TASK
 				$isAboveRoot = $root_dir !== $this_dir && stripos ( $root_dir, $this_dir ) !== false;
 				
 				// SHOW THE '..' FOLDER
-				if ( $file == '..' ) $show_file = ( !$isAboveRoot ) ? true : false;
+				if ( $file == '..' ) $show_file = ( !$isAboveRoot || SELF::$BEYONDROOT ) ? true : false;
 				
 				// DO NOT SHOW THE '.' FOLDER
 				if ( $file != '.' && $show_file )
@@ -5016,10 +5025,21 @@ CLASS FILEMANAGER
 	}
 	
 	/*///------------------------------------------------------------------------
+			>>> INITIALIZE WORK DIRECTORY
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION INITIALIZE_WORKDIR()
+	{
+		if ( !is_dir( $this->workingDirectory ) ) mkdir ( $this->workingDirectory, 0777, true );
+	}
+	
+	/*///------------------------------------------------------------------------
 			>>> CREATE UI
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION LISTEN()
 	{
+		// INITIALIZE WORK DIRECTORY
+		$this->INITIALIZE_WORKDIR();
+		
 		// START CONTROLLING CONNECTIONS
 		$limitedAccess = $this->BLOCK_CONNECTIONS();
 		
@@ -5283,7 +5303,17 @@ CLASS FILEMANAGER
 								$NumberOfTabs,
 								$this->anchor_class_name
 							).
-							GUI_ELEMENTS::VIDEO($_REQUEST[$rwatch], $strvar, $frvar);
+							GUI_ELEMENTS::VIDEO (
+								$_REQUEST[$rwatch],
+								$strvar,
+								$frvar,
+								'',
+								'',
+								'',
+								$NumberOfTabs,
+								NULL,
+								TRUE
+							);
 		$this->files .= (	!isset ( $_REQUEST[$rlisten] ) ) ? '' :
 							GUI_ELEMENTS::ICON (
 								$folder,
@@ -5295,11 +5325,22 @@ CLASS FILEMANAGER
 								$NumberOfTabs,
 								$this->anchor_class_name
 							).
-							GUI_ELEMENTS::AUDIO($_REQUEST[$rlisten], $strvar, $frvar);
+							GUI_ELEMENTS::AUDIO (
+								$_REQUEST[$rlisten],
+								$strvar,
+								$frvar,
+								'',
+								'',
+								$NumberOfTabs,
+								NULL,
+								TRUE
+							);
+		if ( !$limitedAccess ) TASK::BEYONDROOT();
 		TASK::ROOTDIR ( $HomeDirectory );
+		TASK::WORKDIR ( $HomeDirectory );
 		$this->files .= ( $taskresult = $task
 		(
-			'FOLDER', $getVariables, [$HomeDirectory, true],
+			'FOLDER', $getVariables, [true],
 			function ( $result ) use
 			(
 					$thumbsize,
@@ -5336,7 +5377,7 @@ CLASS FILEMANAGER
 				$rawPath = ( $p = rawurldecode ( TASK::REQUEST ($locrvar) ) ) !== '' ? $p : $HomeDirectory;
 				$folderurl = rawurlencode ( TASK::STANDARD_PATH ( realpath ( $rawPath ) ) );
 				$extras = "{$locrvar}={$folderurl}&{$rstart}=1&{$rend}={$limit}&";
-				while ( $start <= $result['count'] )
+				if ( $start + $step <= $result['count'] ) while ( $start <= $result['count'] )
 				{
 					if ( $end > $result['count'] ) $end = $result['count'];
 					if ( $s != $start || $e < $end )
@@ -6698,6 +6739,43 @@ function image_wait(elements, timer, effect)
 		}).each(function() {
 			if(this.complete) $(this).trigger('load');
 		});
+	});
+}
+
+function backgroundImage(imageLocation)
+{
+	var resizeImg = function( bgRatio )
+	{
+		var w =	window.innerWidth
+				|| document.documentElement.clientWidth
+				|| document.body.clientWidth;
+		var h =	window.innerHeight
+				|| document.documentElement.clientHeight
+				|| document.body.clientHeight;
+		var bdRatio = w/h;
+		if ( bdRatio > bgRatio )
+		{
+			document.body.style.backgroundSize = w + "px auto";
+		}
+		else
+		{
+			document.body.style.backgroundSize = "auto " + h + "px";
+		}
+		return bdRatio;
+	};
+	
+	$(function() {
+		var background = new Image();
+		background.src = imageLocation;
+		background.onload = function() {
+			iw = this.width;
+			ih = this.height;
+			var bgRatio = iw/ih;
+			resizeImg ( bgRatio );
+			$(window).resize(function(){
+				resizeImg ( bgRatio );
+			});
+		};
 	});
 }
 

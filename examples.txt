@@ -170,25 +170,25 @@ echo <<<BODY
 		<meta charset="utf-8">
 		<link rel='icon' href='?resource=icon'/>
 		<title>{$_SERVER['HTTP_HOST']}</title>
+		<link rel='stylesheet' href='?script=css' type='text/css'/>
 		<script type='text/javascript' src='?resource=jquery331'></script>
 		<script type='text/javascript' src='?script=ui'></script>
-		<link rel='stylesheet' href='?script=css' type='text/css'/>
-		<script>AJAXOverlayControls("div.overlay");</script>
+		<script type='text/javascript'>
+			AJAXOverlayControls("div.overlay");
+			backgroundImage("?resource=bg");
+			AJAXForm('div.ajax');
+		</script>
+		<style>
+			body {
+				background:				url(?resource=bg) no-repeat;
+				background-color:		black;
+				background-attachment:	fixed;
+				background-position:	center;
+				text-shadow:			2px 2px 4px #000000;
+			}
+		</style>
 	</head>
-	<body
-			background = '?resource=bg'
-			link = '#FFFFFF'
-			alink = '#FFFFFF'
-			vlink = '#FFFFFF'
-			style = '
-						background-attachment:	fixed;
-						background-size:		cover;
-						background-repeat:		no-repeat;
-						background-position:	center center;  
-						text-shadow:			2px 2px 4px #000000;
-					'
-	>
-		<script>AJAXForm('div.ajax');</script>
+	<body link = '#FFFFFF' alink = '#FFFFFF' vlink = '#FFFFFF' >
 		<div class='ajax'>{$f->files}</div>
 		<div class='overlay'>{$f->imdispl}</div>
 	</body>
