@@ -71,15 +71,17 @@ $f->DB_alerts_disabled					= false;		// DISABLE DATABASE ALERTS
 $f->no_cache							= false;		// STOP CACHING IMAGES?
 $f->allowaccess							= true;			// ALLOW LIMITED ACCESS TO FILE MANAGER
 
-$f->AJAXOverlayElement					= '.overlay';	// TARGET ELEMENT OF FILE MANAGER AJAX LINKS
+$f->workingDirectory					= 'files';		// PUBLIC WORKING DIRECTORY
+$f->AJAXElement							= 'div.ajax';	// TARGET ELEMENT OF FILE MANAGER AJAX LINKS
+$f->AJAXOverlayElement					= '.overlay';	// TARGET ELEMENT OF FILE MANAGER AJAX IMAGE LINKS
 $f->otherExtensions_add					= ['example'];	// OTHER FILE EXTENSIONS TO DETECT
 														// USE "$f->otherExtensions" TO OVERRIDE LIST
 
 // DATABASE CREDENTIALS:
 $f->DB_username							= 'root';		// USERNAME
-$f->DB_password							= 'password1';	// PASSWORD
+$f->DB_password							= '';			// PASSWORD
 $f->DB_host								= 'localhost';	// HOSTNAME
-$f->DB_database							= 'MyDatabase';	// DATABASE
+$f->DB_database							= 'test';		// DATABASE
 
 // IF YOU WANT TO CUSTOMIZE YOUR QUERY AND URL REQUEST (i.e. http://localhost/?uid=2&n=filename)
 // LEAVE FIELDS BLANK TO DISABLE THIS QUERY METHOD
@@ -145,8 +147,11 @@ $f->RangeEnd_RequestVariable			= 'end';					//
 $f->WatchMedia_RequestVariable			= 'watch';					//
 $f->ListenToMedia_RequestVariable		= 'listen';					//
 
+// CLASS NAME TO USE FOR ANCHORS
+$f->anchor_class_name					= "ajax";					//
+
 // PROPERTIES FOR THE IMAGE PREVIEW
-$f->image_properties					= "class='imagepreview'";	//
+$f->display_image_properties			= "class='imagepreview'";	//
 
 // ADJUST THUMBNAIL width/height/auto
 $f->thumbnail_adjustment_orientation	= 'auto';					//

@@ -27,6 +27,8 @@ CLASS TASK
 	PRIVATE STATIC $DEATH			= FALSE;	// ACTIVATE OR DEACTIVATE 'DIE' AFTER 'BIND' EXECUTION
 	PRIVATE STATIC $ANON_METHOD		= NULL;		// DEFAULT ANONYMOUS FUNCTION
 	PRIVATE STATIC $HANDLE_FILE		= NULL;		// DEFAULT ANONYMOUS FUNCTION FOR FILES
+	PRIVATE STATIC $WORKDIR			= '';		// WORKING DIRECTORY
+	PRIVATE STATIC $ROOTDIR			= '';		// ROOT DIRECTORY
 	PRIVATE STATIC $STATIC =					// PARAMETERS USED BY METHODS IN STATIC CONTEXT
 	[	'ERROR'=>''								// ERROR MESSAGES
 	];
@@ -1611,6 +1613,28 @@ CLASS TASK
 		SELF::$DEBUG = TRUE;
 	}
 	
+	/*///------------------------------------------------------------------------
+			>>> SET WORK DIRECTORY FOR FOLDER READER
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION WORKDIR
+	(
+			string $directory = ''	// DIRECTORY
+	)
+	{
+		SELF::$WORKDIR = is_dir ( realpath ( $directory ) ) ? $directory : getcwd();
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET ROOT DIRECTORY FOR FOLDER READER
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION ROOTDIR
+	(
+			string $directory = ''	// DIRECTORY
+	)
+	{
+		SELF::$ROOTDIR = is_dir ( realpath ( $directory ) ) ? $directory : getcwd();
+	}
+	
 	
 	/*///------------------------------------------------------------------------
 	-----------------------------------------------------------------------------
@@ -1921,12 +1945,12 @@ CLASS TASK
 	}
 	
 	/*///------------------------------------------------------------------------
-			>>> CHANGE THE PATH SEPARATOR
+			>>> CHANGE THE DIRECTORY SEPARATOR
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION STANDARD_PATH
 	(
 			string $path,						// PATH/URL TO FILE
-			bool $use_system_separator = false	// USE YOUR OS'S PATH SEPARATOR?
+			bool $use_system_separator = false	// USE YOUR OS'S DIRECTORY SEPARATOR?
 	): STRING
 	{
 		// CHANGE BACKSLASHES TO FORWARD SLASH
@@ -1934,8 +1958,8 @@ CLASS TASK
 		
 		if ($use_system_separator)
 		{
-			// CHANGE FORWARD SLASH TO THE SYSTEM'S PATH SEPARATOR
-			$path = str_replace('/', PATH_SEPARATOR, $path);
+			// CHANGE FORWARD SLASH TO THE SYSTEM'S DIRECTORY SEPARATOR
+			$path = str_replace('/', DIRECTORY_SEPARATOR, $path);
 		}
 		
 		// RETURN THE NEW PATH
@@ -2220,7 +2244,8 @@ CLASS TASK
 		$is_windows = ( strtoupper ( substr ( PHP_OS, 0, 3 ) ) === 'WIN' );
 		
 		// IF DIRECTORY IS EMPTY, USE THE CURRENT WORKING DIRECTORY BY DEFAULT
-		if ( $dir === '' ) $dir = getcwd();
+		$wdir = SELF::$WORKDIR !== '' ? SELF::$WORKDIR : getcwd();
+		if ( $dir === '' ) $dir = $wdir;
 		
 		// USE THE DEFAULT METHOD IF NO ANONYMOUS FUNCTION (FOR PROCESSING RETURN ARRAY) IS DECLARED
 		if ( $do === NULL ) $do = SELF::$ANON_METHOD;
@@ -2229,7 +2254,7 @@ CLASS TASK
 		if ( is_dir ( $dir ) && ( $dh = opendir ( $dir ) ) )
 		{
 			// ENSURE STANDARD PATH / URL FORMAT
-			$dir = rtrim ( SELF::STANDARD_PATH ( realpath ( $dir ) ), '/' ) . '/';
+			$dir = rtrim ( SELF::STANDARD_PATH ( realpath ( $dir ) ), '\\/' ) . '/';
 			
 			// READ THE DIRECTORY CONTENTS
 			while ( ( $file = readdir ( $dh ) ) !== false)
@@ -2253,8 +2278,13 @@ CLASS TASK
 				if ( $is_hidden && !$showHidden ) $show_file = false;
 				if ( $is_system && !$showSystem ) $show_file = false;
 				
+				// STOP SHOWING '..' IF ROOT DIRECCTORY IS REACHED
+				$root_dir = strtolower ( realpath ( SELF::$ROOTDIR ) );
+				$this_dir = strtolower ( realpath ( dirname ( $dir ) ) );
+				$isAboveRoot = $root_dir !== $this_dir && stripos ( $root_dir, $this_dir ) !== false;
+				
 				// SHOW THE '..' FOLDER
-				if ( $file == '..' ) $show_file = true;
+				if ( $file == '..' ) $show_file = ( !$isAboveRoot ) ? true : false;
 				
 				// DO NOT SHOW THE '.' FOLDER
 				if ( $file != '.' && $show_file )
@@ -2343,8 +2373,8 @@ CLASS TASK
 		else if ( is_file ( $dir ) && strtolower ( pathinfo ( $dir, PATHINFO_EXTENSION ) ) == 'zip' )
 		{
 			// PARSE THE PARENT PATH
-			$folder = rtrim ( SELF::STANDARD_PATH ( realpath ( $dir ) ), '/' ) . '/';
-			$parent = rtrim ( SELF::STANDARD_PATH ( realpath ( dirname ( $folder ) ) ), '/' ) . '/';
+			$folder =	rtrim ( SELF::STANDARD_PATH ( realpath ( $dir ) ), '\\/' ) . '/';
+			$parent =	rtrim ( SELF::STANDARD_PATH ( realpath ( dirname ( $folder ) ) ), '\\/' ) . '/';
 			
 			// RETURN THE PARENT PATH AND CURRENT PATH
 			$return = [ rawurlencode ( $parent ), $dir ];
@@ -2498,12 +2528,12 @@ CLASS TASK
 			string $url	// FILE ADDRESS/LOCATION
 	)
 	{
-		$root = $_SERVER['DOCUMENT_ROOT'];
+		$root = rtrim ( $_SERVER['DOCUMENT_ROOT'], '/' );
 		$host =	( strpos ( $url, '/' ) !== false ) ? explode ( '/', SELF::STRIP_HTTP ( $url ) ) [0] : '';
 		return	file_exists ( $url ) ? $url : (
 				file_exists ( $new_url = SELF::STRIP_HTTP (str_ireplace($host, $root, $url)) )
 				? $new_url : ( file_exists ( $new_url = "/$url" )
-				? $new_url : ( file_exists ( $new_url = "$root/$url" )
+				? $new_url : ( file_exists ( $new_url = "$root/".ltrim($url, '/') )
 				? $new_url : $url ) ) );
 	}
 	
@@ -3348,7 +3378,8 @@ CLASS TASK
 		$default_values = [130, 'auto', '', true, true, false, true, false];
 		if ( !SELF::ARGS( $me, $types, $default_values, $names ) ) return SELF::FAIL;
 		
-		$url		= SELF::FILEPATH ( $me->url );
+		$true_url	= $me->url;
+		$url		= SELF::FILEPATH ( $true_url );
 		$max_size	= $me->max_size;
 		$lock		= $me->lock;
 		$filename	= $me->filename;
@@ -3359,7 +3390,12 @@ CLASS TASK
 		$simple		= $me->simple;
 		$scriptDir	= str_replace( '\\', '/', $_SERVER['PHP_SELF'] );
 		
-		if ( file_exists ( $url ) || SELF::URLEXISTS ( $url ) )
+		$is_url = preg_match ( '#^https?://#', strtolower ( $true_url ) );
+		$parse = $is_url ? parse_url($true_url)['host'] : '';
+		$url_host = ( $parse != '' ) ? strtolower ( gethostbyname ( $parse ) ) : '';
+		$stray_link = ( $parse != '' && $url_host != strtolower ( $_SERVER['HTTP_HOST'] ) ) ? true : false;
+		
+		if ( ( file_exists ( $url ) && !$stray_link ) || SELF::URLEXISTS ( $url ) )
 		{
 			if ( strpos ( $url, $scriptDir ) !== false )
 			{
@@ -4683,6 +4719,12 @@ CLASS FILEMANAGER
 	// OPEN FILE MANAGER TO THE INTERNET
 	PUBLIC $allowaccess				= false;						//
 	
+	// DIRECTORY THAT SERVES AS YOUR 'HOME', PUBLIC FACING DIRECTORY
+	PUBLIC $workingDirectory		= '';							//
+	
+	// AJAX TARGET ELEMENT
+	PUBLIC $AJAXElement				= 'div.ajax';					// i.e. div.divClass#divID
+	
 	// AJAX TARGET OVERLAY ELEMENT
 	PUBLIC $AJAXOverlayElement		= 'div.overlay';				// i.e. div.divClass#divID
 	
@@ -4833,7 +4875,8 @@ CLASS FILEMANAGER
 	//////////////////////////////////////////////////////////////////
 	// HTML ELEMENT PROPERTIES:
 	//////////////////////////////////////////////////////////////////
-	PUBLIC $image_properties					= "class='imagepreview'";
+	PUBLIC $anchor_class_name					= "ajax";
+	PUBLIC $display_image_properties			= "class='imagepreview'";
 	PUBLIC $thumbnail_adjustment_orientation	= 'auto';
 	PUBLIC $thumbsize							= 100;
 	
@@ -4874,7 +4917,7 @@ CLASS FILEMANAGER
 	/*///------------------------------------------------------------------------
 			>>> BLOCK CONNECTION TO FILES
 	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION BLOCK_CONNECTIONS()
+	FINAL PUBLIC FUNCTION BLOCK_CONNECTIONS(): BOOL
 	{
 		if
 		(
@@ -4883,15 +4926,93 @@ CLASS FILEMANAGER
 				!$this->allowaccess
 		)
 		{
-			$dir = $this->DataLocation_RequestVariable;
-			if
-			(
-				!$this->allowaccess ||
-				isset ( $_REQUEST[$dir] ) &&
-				stripos( rawurldecode ( $_REQUEST[$dir] ), 'c:/wamp64/www/main' ) === false &&
-				stripos( rawurldecode ( $_REQUEST[$dir] ), 'c:\\wamp64\\www\\main' ) === false
-			)	{	die ( '<script type="text/javascript">alert("ACCESS DENIED");</script>' );	}
+			// REQUEST KEYS TO BE MONITORED
+			$rkeys =	[
+							$this->DataLocation_RequestVariable,
+							$this->FullImage_RequestVariable,
+							$this->File_RequestVariable,
+							$this->Stream_RequestVariable,
+							$this->URLThumb_RequestVariable,
+							$this->ZipFile_RequestVariable,
+							$this->ZipThumbSource_RequestVariable,
+							$this->WatchMedia_RequestVariable,
+							$this->ListenToMedia_RequestVariable
+						];
+			
+			// PREPARE HOST LOCATION INFO
+			$host_name = $_SERVER['HTTP_HOST'];
+			$host_IP = gethostbyname ( $_SERVER['HTTP_HOST'] );
+			$host_LAN_IP = $_SERVER['SERVER_ADDR'];
+			$host_local_name = gethostname();
+			$host_local_IP = gethostbyname(getHostname());
+			$hosts = [ $host_name, $host_IP, $host_LAN_IP, $host_local_name, $host_local_IP ];
+			if ( !in_array ( 'localhost', $hosts ) ) $hosts[] = 'localhost';
+			if ( !in_array ( '127.0.0.1', $hosts ) ) $hosts[] = '127.0.0.1';
+			
+			// GET WORKING DIRECTORY
+			$d = realpath ( $this->workingDirectory );
+			$home = ( $d !== '' && file_exists($d) && is_dir($d) ) ? $d : getcwd();
+			$workDir = rtrim ( str_replace ( '\\', '/', $home ), '/' );
+			
+			// ANALYZE REQUESTS
+			foreach ($rkeys as $rkey) if ( isset ( $_REQUEST[$rkey] ) )
+			{
+				$location = str_replace ( '\\', '/', rawurldecode ( $_REQUEST[$rkey] ) );
+				$is_url = preg_match ( '#^https?://#', strtolower ( $location ) );
+				$file_IP = $is_url ? gethostbyname ( parse_url($location)['host'] ) : '';
+				
+				// GET REAL LOCATION IF FILE REQUESTED IS A LOCAL FILE
+				if ( !$is_url )
+				{
+					$truelocation = str_replace ( '\\', '/', realpath ( $location ) );
+					$location = ( $truelocation == '' ) ? $location : $truelocation;
+				}
+				
+				// CHECK IF FILE HOST IS AN ALTERNATE HOST FOR THE SERVER
+				$blockedAlternateHost = false;
+				if ( $is_url ) foreach ( $hosts as $host )
+				{
+					if ( stripos ( $location, $host ) !== false )
+					{
+						$blockedAlternateHost = true;
+						break;
+					}
+				}
+				
+				// BLOCK IF
+				if (
+					// ACCESS IS NOT ALLOWED
+					!$this->allowaccess ||
+					
+					// REQUESTED FILE IS LOCAL AND THE LOCATION
+					// IS NOT WITHIN THE WORKING DIRECTORY
+					!$is_url && stripos ( $location, $workDir ) === false ||
+					
+					// REQUESTED FILE IS REMOTE BUT THE SERVER IS AN ALTERNATE SERVER
+					$is_url && $blockedAlternateHost ||
+					
+					// REQUESTED FILE IS REMOTE AND
+					// THE FILE'S IP IS THE SAME AS THE HOST'S IP
+					$is_url && $file_IP === $host_IP
+				)
+				{
+					$inscript = "";
+					// REMOVE THE URI AND REDIRECT
+					if ( strpos ( $_SERVER['REQUEST_URI'], '?' ) !== false )
+					{
+						$redirect = explode ( '?', $_SERVER['REQUEST_URI'] )[0];
+						$inscript = "window.location.href = '{$redirect}'";
+					}
+					die ( "<script type='text/javascript'>alert('ACCESS DENIED');$inscript</script>" );
+				}
+			}
+			
+			// LIMITED ACCESS
+			return true;
 		}
+		
+		// UNLIMITED ACCESS
+		return false;
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -4900,7 +5021,7 @@ CLASS FILEMANAGER
 	FINAL PUBLIC FUNCTION LISTEN()
 	{
 		// START CONTROLLING CONNECTIONS
-		$this->BLOCK_CONNECTIONS();
+		$limitedAccess = $this->BLOCK_CONNECTIONS();
 		
 		// ELEMENT THAT DISPLAYS IMAGES, VIDEOS, AND MUSIC UPON AJAX REQUEST
 		$AJAXOverlayElement	= $this->AJAXOverlayElement;
@@ -4961,7 +5082,8 @@ CLASS FILEMANAGER
 		$dbselect			= "{$dbscol}{$dbfncol}";
 		
 		// HTML ELEMENT PROPERTIES:
-		$iprop				= $this->image_properties;
+		$aclass				= $this->anchor_class_name;
+		$iprop				= $this->display_image_properties;
 		$lock				= $this->thumbnail_adjustment_orientation;
 		$no_cache			= $this->no_cache;
 		
@@ -5122,25 +5244,62 @@ CLASS FILEMANAGER
 		$task('ZIPTHUMB', "{$zipthfrvar}, {$zipthcrvar}", [$thumbsize, $lock, $no_cache]);
 		$task('URLTHUMB', $urlthvar, [$thumbsize, $lock, $no_cache]);
 		
+		$IncludeHomeDirectory = true;
+		$HomeDirectory = $this->workingDirectory;
+		$NumberOfTabs = 3;
 		$limit = 20;
+		
 		$environment = "&$rstart=1&$rend=$limit&$thrvar=$thumbsize";
 		$getVariables = "!$uirvar, !$thrvar, !$irvar, !$zipirvar, $locrvar, $rstart, $rend";
 		$folder = (	!isset ( $_REQUEST[$rwatch] ) ) ? '' :
 					rawurlencode ( dirname ( rawurldecode ( $_REQUEST[$rwatch] ) ) );
 		$folder = (	!isset ( $_REQUEST[$rlisten] ) ) ? $folder :
 					rawurlencode ( dirname ( rawurldecode ( $_REQUEST[$rlisten] ) ) );
-		$this->files = "\r\n\t\t<script>AJAXLink('div.ajax', 'a.ajax', '&{$uirvar}');</script>";
-		$this->files .= GUI_ELEMENTS::STYLE ($lock, $thumbsize);
-		$this->files .= GUI_ELEMENTS::DISKS($locrvar, $environment);
+		$this->files  =	"\r\n" . TASK::STRING_OF("\t", $NumberOfTabs) .
+						"<script>AJAXLink('{$this->AJAXElement}', 'a.{$aclass}', '&{$uirvar}');</script>";
+		$this->files .= GUI_ELEMENTS::STYLE (
+								$lock,
+								$thumbsize,
+								$NumberOfTabs
+						);
+		$this->files .= GUI_ELEMENTS::DISKS (
+								$locrvar,
+								$environment,
+								$NumberOfTabs,
+								$this->AJAXElement,
+								$IncludeHomeDirectory,
+								$HomeDirectory,
+								$this->anchor_class_name,
+								$limitedAccess
+						);
 		$this->files .= (	!isset ( $_REQUEST[$rwatch] ) ) ? '' :
-							GUI_ELEMENTS::ICON($folder, $locrvar, $thumbsize, $environment).
+							GUI_ELEMENTS::ICON (
+								$folder,
+								$locrvar,
+								$thumbsize,
+								$environment,
+								'',
+								0,
+								$NumberOfTabs,
+								$this->anchor_class_name
+							).
 							GUI_ELEMENTS::VIDEO($_REQUEST[$rwatch], $strvar, $frvar);
 		$this->files .= (	!isset ( $_REQUEST[$rlisten] ) ) ? '' :
-							GUI_ELEMENTS::ICON($folder, $locrvar, $thumbsize, $environment).
+							GUI_ELEMENTS::ICON (
+								$folder,
+								$locrvar,
+								$thumbsize,
+								$environment,
+								'',
+								0,
+								$NumberOfTabs,
+								$this->anchor_class_name
+							).
 							GUI_ELEMENTS::AUDIO($_REQUEST[$rlisten], $strvar, $frvar);
+		TASK::ROOTDIR ( $HomeDirectory );
 		$this->files .= ( $taskresult = $task
 		(
-			'FOLDER', $getVariables, [true],
+			'FOLDER', $getVariables, [$HomeDirectory, true],
 			function ( $result ) use
 			(
 					$thumbsize,
@@ -5161,17 +5320,21 @@ CLASS FILEMANAGER
 					$rwatch,
 					$rlisten,
 					$AJAXOverlayElement,
-					$miscExtensions
+					$miscExtensions,
+					$aclass,
+					$NumberOfTabs,
+					$HomeDirectory
 			)
 			{
 				$resstring = '';
-				$ImageAnchorProperties = "class='ajax' target='$AJAXOverlayElement'";
+				$ImageAnchorProperties = "class='$aclass' target='$AJAXOverlayElement'";
 				$start = 1;
 				$end = $limit;
 				$step = $end - $start;
 				$s = intval ( TASK::REQUEST ( $rstart ) );
 				$e = intval ( TASK::REQUEST ( $rend ) );
-				$folderurl = rawurlencode ( rawurldecode ( TASK::REQUEST ($locrvar) ) );
+				$rawPath = ( $p = rawurldecode ( TASK::REQUEST ($locrvar) ) ) !== '' ? $p : $HomeDirectory;
+				$folderurl = rawurlencode ( TASK::STANDARD_PATH ( realpath ( $rawPath ) ) );
 				$extras = "{$locrvar}={$folderurl}&{$rstart}=1&{$rend}={$limit}&";
 				while ( $start <= $result['count'] )
 				{
@@ -5183,7 +5346,10 @@ CLASS FILEMANAGER
 											$locrvar,
 											$thumbsize,
 											"&{$rstart}={$start}&{$rend}={$end}&{$thrvar}={$thumbsize}",
-											"[ ({$start}-{$end}) of {$result['count']} ]"
+											"[ ({$start}-{$end}) of {$result['count']} ]",
+											0,
+											$NumberOfTabs,
+											$this->anchor_class_name
 										);
 					}
 					$start = $end + 1;
@@ -5197,7 +5363,16 @@ CLASS FILEMANAGER
 					$extension = strtolower ( pathinfo ( $fn, PATHINFO_EXTENSION ) );
 					if ( is_dir ( $fn ) )
 					{
-						$resstring .= GUI_ELEMENTS::ICON ( $fileResult, $locrvar, $thumbsize, $environment );
+						$resstring .= GUI_ELEMENTS::ICON (
+											$fileResult,
+											$locrvar,
+											$thumbsize,
+											$environment,
+											'',
+											0,
+											$NumberOfTabs,
+											$this->anchor_class_name
+										);
 					}
 					else if ( $extension == 'lnk' && TASK::IS_SHORTCUT ( $fn ) )
 					{
@@ -5210,21 +5385,42 @@ CLASS FILEMANAGER
 								$rn .= $lnkn [ $lnkctr ];
 							}
 							$resstring .= GUI_ELEMENTS::ICON (
-												$truepath,
-												$locrvar,
-												$thumbsize,
-												$environment,
-												$rn
-											);
+											$truepath,
+											$locrvar,
+											$thumbsize,
+											$environment,
+											$rn,
+											0,
+											$NumberOfTabs,
+											$this->anchor_class_name
+										);
 						}
 					}
 					else if ( GUI_ELEMENTS::IS_AUDIO ( $fn, $mimetype, $extension ) )
 					{
-						$resstring .= GUI_ELEMENTS::ICON ( $fileResult, $rlisten, $thumbsize );
+						$resstring .= GUI_ELEMENTS::ICON (
+											$fileResult,
+											$rlisten,
+											$thumbsize,
+											'',
+											'',
+											0,
+											$NumberOfTabs,
+											$this->anchor_class_name
+										);
 					}
 					else if ( GUI_ELEMENTS::IS_VIDEO ( $fn, $mimetype, $extension ) )
 					{
-						$resstring .= GUI_ELEMENTS::ICON ( $fileResult, $rwatch, $thumbsize );
+						$resstring .= GUI_ELEMENTS::ICON (
+											$fileResult,
+											$rwatch,
+											$thumbsize,
+											'',
+											'',
+											0,
+											$NumberOfTabs,
+											$this->anchor_class_name
+										);
 					}
 					else if ( GUI_ELEMENTS::IS_IMAGE ( $fn, $mimetype, $extension ) )
 					{
@@ -5233,7 +5429,9 @@ CLASS FILEMANAGER
 											"{$extras}{$irvar}",
 											$urlthvar,
 											$ImageAnchorProperties,
-											$thumbsize
+											$thumbsize,
+											0,
+											$NumberOfTabs
 										);
 					}
 					else if ( is_file ( $fn ) && $extension == 'zip' )
@@ -5244,19 +5442,22 @@ CLASS FILEMANAGER
 						$zipThumbnailKey = $zipthfrvar;
 						$zipThumbnailContentKey = $zipthcrvar;
 						$resstring .= GUI_ELEMENTS::ZIP (
-												$fileResult,
-												$rstart,
-												$rend,
-												$dirUp,
-												$environment,
-												$zipKeys,
-												$zipContentKeys,
-												$environment,
-												$ImageAnchorProperties,
-												$zipThumbnailKey,
-												$zipThumbnailContentKey,
-												$thumbsize
-											);
+											$fileResult,
+											$rstart,
+											$rend,
+											$dirUp,
+											$environment,
+											$zipKeys,
+											$zipContentKeys,
+											$this->anchor_class_name,
+											$environment,
+											$ImageAnchorProperties,
+											$zipThumbnailKey,
+											$zipThumbnailContentKey,
+											$thumbsize,
+											0,
+											$NumberOfTabs
+										);
 					}
 					else if ( is_file ( $fn ) && $extension == 'ico' )
 					{
@@ -5266,12 +5467,23 @@ CLASS FILEMANAGER
 											$frvar,
 											$frvar,
 											$linkProps,
-											$thumbsize
+											$thumbsize,
+											0,
+											$NumberOfTabs
 										);
 					}
 					else if ( is_file ( $fn ) && in_array ( $extension, $miscExtensions ) )
 					{
-						$resstring .= GUI_ELEMENTS::ICON ( $fileResult, $frvar, $thumbsize );
+						$resstring .= GUI_ELEMENTS::ICON (
+											$fileResult,
+											$frvar,
+											$thumbsize,
+											'',
+											'',
+											0,
+											$NumberOfTabs,
+											$this->anchor_class_name
+										);
 					}
 				}
 				return $resstring;
@@ -5525,7 +5737,7 @@ div.filename {
 </style>
 
 SCRIPT
-		);
+		)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 		
 		// ECHO THE RESULT OR...
 		if ( $echo_result )
@@ -5548,14 +5760,16 @@ SCRIPT
 			int $tabs = 2,					// NUMBER OF TABS / INDENTATION
 			string $target = 'div.ajax',	// TARGET DIV FOR AJAX LINKS
 			bool $includeHome = true,		// INCLUDE HOME FOLDER?
-			string $homeDir = ''			// PREFERRED HOME DIRECTORY
+			string $homeDir = '',			// PREFERRED HOME DIRECTORY
+			string $anchorClass = 'ajax',	// CLASS NAME OF ANCHOR
+			bool $limitedAccess = false		// LIMIT ACCESS TO DRIVES?
 	): STRING
 	{
 		// CREATE THE INDENTATION
 		$stringtabs = "\r\n" . TASK::STRING_OF ( "\t", $tabs );
 		
 		// GET CURRENT WORKING DIRECTORY AND ITS AVAILABLE SPACE
-		$homeDir = ( $homeDir != '' ) ? $homeDir : getcwd();
+		$homeDir = ( ( $d = realpath ( $homeDir ) ) != '' ) ? $d : getcwd();
 		$workDir = rawurlencode ( TASK::STANDARD_PATH ( $homeDir ) );
 		$wdspace = TASK::BYTES ( disk_free_space ( $homeDir ) );
 		
@@ -5564,7 +5778,7 @@ SCRIPT
 		( "\r\n", $stringtabs, <<<DRIVE
 
 <div class = 'container' >
-	<a class='ajax' href='?{$url_varname}={$workDir}{$url_extras}' target='{$target}' >
+	<a class='$anchorClass' href='?{$url_varname}={$workDir}{$url_extras}' target='{$target}' >
 		<div class='icon'>
 			<img id = 'drive' class = 'icon' />
 		</div>
@@ -5578,7 +5792,7 @@ DRIVE
 		);
 		
 		// READ THE LIST OF ACTIVE DISKS AND ITERATE THROUGH IT
-		foreach ( TASK::DISKS() as $drive )
+		if ( !$limitedAccess ) foreach ( TASK::DISKS() as $drive )
 		{
 			// READ THE DRIVE SPACE
 			$space = TASK::BYTES($drive['space']);
@@ -5591,7 +5805,7 @@ DRIVE
 			( "\r\n", $stringtabs, <<<DRIVE
 
 <div class = 'container' >
-	<a class='ajax' href='?{$url_varname}={$url}{$url_extras}' target='{$target}' >
+	<a class='$anchorClass' href='?{$url_varname}={$url}{$url_extras}' target='{$target}' >
 		<div class='icon'>
 			<img id = 'drive' class = 'icon' />
 		</div>
@@ -5612,7 +5826,7 @@ DRIVE
 <script>$('img#drive.icon').attr('src', drive);</script>
 
 DRIVE
-			);
+			)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -5738,7 +5952,7 @@ DRIVE
 </div>$script
 
 SCRIPT
-		);
+		)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 		
 		if ( $echo_result )
 		{
@@ -5850,9 +6064,8 @@ SCRIPT
 		</audio>
 	</div>
 </div>
-
 SCRIPT
-		);
+		)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 		
 		if ( $echo_result )
 		{
@@ -5875,7 +6088,7 @@ SCRIPT
 			string $rawname = '',			// RAW FILE NAME WITHOUT EXTENSION
 			int $fontsize = 0,				// FONTSIZE IN PX
 			int $tabs = 2,					// NUMBER OF TABS / INDENTATION
-			string $anchor_properties = '',	// ADDITIONAL PROPERTIES FOR ANCHOR
+			string $anchor_class = 'ajax',	// ANCHOR CLASS NAME
 			bool $echo_result = null		// ECHO STRING RESULT?
 	): STRING
 	{
@@ -5968,8 +6181,7 @@ SCRIPT
 		$rawname = TASK::PX_PER_WORD ( $rawname, $thumbsize - 20, $fontsize );
 		
 		// PREPARE THE PROPERTIES FOR THE HYPERLINK
-		$anchor_properties = ( $anchor_properties != '' ) ? $anchor_properties : (
-							 ( $type == 'any' ) ? "target='_blank'" : "class='ajax'" );
+		$anchor_properties = ( $type == 'any' ) ? "target='_blank'" : "class='$anchor_class'" ;
 		
 		// BUILD THE HTML SCRIPT FOR THE HTML5 MEDIA ELEMENT
 		$result = str_replace ( "\r\n", "\r\n" . TASK::STRING_OF ( "\t", $tabs ),
@@ -5983,9 +6195,8 @@ SCRIPT
 		<div class='filename' >$rawname</div>
 	</a>
 </div>
-
 SCRIPT
-		);
+		)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 		
 		// INSERT THE JQUERY SCRIPT TO DISPLAY THE ICON IMAGE
 		$result .= ( $result == '' ) ?
@@ -5993,9 +6204,8 @@ SCRIPT
 <<<SCRIPT
 
 <script>$('img#$type$unique.icon').attr('src', $type);</script>
-
 SCRIPT
-		);
+		)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 		
 		if ( $echo_result )
 		{
@@ -6029,7 +6239,7 @@ SCRIPT
 		$fontsize = ( $fontsize == 0 ) ? ( $thumbsize / 10 ) : $fontsize;
 		
 		// GET THE RAW FILE URL STRING
-		$filename = rawurldecode ( $file_url );
+		$filename = TASK::STANDARD_PATH ( realpath ( rawurldecode ( $file_url ) ) );
 		
 		// ENSURE THAT THE FILE URL IS URLENCODED
 		$file_url = rawurlencode ( $filename );
@@ -6072,9 +6282,8 @@ SCRIPT
 		<div class='filename' >$rawname</div>
 	</a>
 </div>
-
 SCRIPT
-		);
+		)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 		
 		if ( $echo_result )
 		{
@@ -6097,6 +6306,7 @@ SCRIPT
 			string $parent_url_extras = '',				// EXTRA PARAMETERS FOR FOLDER ANCHOR
 			string $zip_varname = '',					// VARIABLE NAME FOR ZIP FILE
 			string $content_varname = '',				// VARIABLE NAME FOR ZIP CONTENT
+			string $anchor_class_name = 'ajax',			// CLASS NAME OF ANCHOR
 			string $anchor_href_extras = '',			// EXTRA PARAMETERS FOR FILE ANCHOR
 			string $anchor_props = "target='_blank'",	// ADDITIONAL PROPERTIES FOR ANCHOR
 			string $zip_varname_th = '',				// VARIABLE NAME FOR ZIP FILE ( THUMBNAIL MODE )
@@ -6214,7 +6424,8 @@ SCRIPT
 				if ( !$display_all )
 				{
 					// USE THIS PROPERTY
-					$property = "href='?$parent_varname=$file_url$parent_url_extras' class='ajax'";
+					$property = "href='?$parent_varname=$file_url$parent_url_extras' ".
+								"class='$anchor_class_name'";
 				}
 				else
 				{
@@ -6251,9 +6462,8 @@ SCRIPT
 		<div class='filename' >$name</div>
 	</a>
 </div>$overlay_js
-
 SCRIPT
-				);
+				)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 				
 				// COUNT NEXT FILE
 				$ctr++;
@@ -6282,9 +6492,8 @@ SCRIPT
 	</a>
 </div>
 <script>$('img#zip$ctr$unique.icon').attr('src', any);</script>
-
 SCRIPT
-				);
+				)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 				
 				// COUNT NEXT FILE
 				$ctr++;
@@ -6316,7 +6525,7 @@ SCRIPT
 <<<SCRIPT
 
 <div class = 'container' >
-	<a href='?$parent_varname=$file_url$parent_url_extras' class='ajax' >
+	<a href='?$parent_varname=$file_url$parent_url_extras' class='$anchor_class_name' >
 		<div class='icon'>
 			<img id='zip$ctr$unique' class='icon' />$overlay_ht
 		</div>
@@ -6324,9 +6533,8 @@ SCRIPT
 	</a>
 </div>
 <script>$('img#zip$ctr$unique.icon').attr('src', any);</script>$overlay_js
-
 SCRIPT
-			);
+			)."\r\n".TASK::STRING_OF ( "\t", ( ( $tabs > 0 ) ? ( $tabs - 1 ) : $tabs ) );
 		}
 		
 		if ( $echo_result )
