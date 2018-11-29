@@ -5513,6 +5513,30 @@ CLASS FILEMANAGER
 											$NumberOfTabs
 										);
 					}
+					else if ( GUI_ELEMENTS::IS_WEBPAGE ( $fn, $extension ) )
+					{
+						$truepath = '';
+						if ( stripos ( $fn, $_SERVER['DOCUMENT_ROOT'] ) !== false )
+						{
+							$truepath = str_ireplace ( $_SERVER['DOCUMENT_ROOT'], '', $fn );
+							$truepath = ltrim ( $truepath, '/' );
+						}
+						if ( $truepath != '' )
+						{
+							$resstring .= GUI_ELEMENTS::ICON (
+											$truepath,
+											'',
+											$thumbsize,
+											'',
+											'',
+											0,
+											$NumberOfTabs,
+											'',
+											NULL,
+											FALSE
+										);
+						}
+					}
 					else if ( is_file ( $fn ) && in_array ( $extension, $miscExtensions ) )
 					{
 						$resstring .= GUI_ELEMENTS::ICON (
@@ -5556,22 +5580,22 @@ CLASS FILEMANAGER
 
 CLASS GUI_ELEMENTS
 {
-	PUBLIC STATIC $VIDEO_MIME = [	// ACCEPTED VIDEO MIME TYPES
-									'video/mp4',
-									'video/webm',
-									'video/ogg',
-									'video/mkv'
-								];
-	PUBLIC STATIC $AUDIO_MIME = [	// ACCEPTED AUDIO MIME TYPES
-									'audio/mp3',
-									'audio/mpeg',
-									'audio/mpeg3',
-									'audio/x-mpeg',
-									'audio/x-mpeg-3',
-									'application/octet-stream',
-									'audio/ogg',
-									'audio/wav'
-								];
+	PUBLIC STATIC $VIDEO_MIME =			[	// ACCEPTED VIDEO MIME TYPES
+											'video/mp4',
+											'video/webm',
+											'video/ogg',
+											'video/mkv'
+										];
+	PUBLIC STATIC $AUDIO_MIME =			[	// ACCEPTED AUDIO MIME TYPES
+											'audio/mp3',
+											'audio/mpeg',
+											'audio/mpeg3',
+											'audio/x-mpeg',
+											'audio/x-mpeg-3',
+											'application/octet-stream',
+											'audio/ogg',
+											'audio/wav'
+										];
 	PUBLIC STATIC $AUDIO_EXTENSIONS =	[	// ACCEPTED AUDIO EXTENSIONS
 											'mp3',
 											'wav'
@@ -5582,6 +5606,20 @@ CLASS GUI_ELEMENTS
 											'bmp',
 											'png',
 											'gif'
+										];
+	PUBLIC STATIC $WEBPAGE_EXTENSIONS =	[	// ACCEPTED WEBPAGE EXTENSIONS
+											'html',
+											'xhtml',
+											'asp',
+											'aspx',
+											'jsp',
+											'pl',
+											'php',
+											'php3',
+											'phtml',
+											'shtml',
+											'stm',
+											'xml'
 										];
 	
 	
@@ -5720,6 +5758,19 @@ CLASS GUI_ELEMENTS
 		
 		// RETURN TRUE IF THE REFERENCED FILE IS AN IMAGE FILE
 		return ( is_file ( $filename ) && in_array ( $extension, SELF::$IMAGE_EXTENSIONS ) );
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> CHECK IF FILE IS A WEBPAGE
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION IS_WEBPAGE
+	(
+			string $filename,		// FILE NAME/LOCATION
+			string $extension = ''	// FILE EXTENSION
+	): BOOL
+	{
+		// RETURN TRUE IF THE REFERENCED FILE IS A WEBPAGE
+		return ( is_file ( $filename ) && in_array ( $extension, SELF::$WEBPAGE_EXTENSIONS ) );
 	}
 	
 	
@@ -6130,7 +6181,8 @@ SCRIPT
 			int $fontsize = 0,				// FONTSIZE IN PX
 			int $tabs = 2,					// NUMBER OF TABS / INDENTATION
 			string $anchor_class = 'ajax',	// ANCHOR CLASS NAME
-			bool $echo_result = null		// ECHO STRING RESULT?
+			bool $echo_result = null,		// ECHO STRING RESULT?
+			bool $real_path = true			// USE REAL PATH?
 	): STRING
 	{
 		// SET DEFAULT VALUE FOR ECHO RESULT IF NOT SET
@@ -6143,7 +6195,8 @@ SCRIPT
 		$filename = rawurldecode ( $file_url );
 		
 		// ENSURE THAT THE FILE URL IS URLENCODED
-		$file_url = rawurlencode ( TASK::STANDARD_PATH ( realpath ( $filename ) ) );
+		$file_real_path = TASK::STANDARD_PATH ( realpath ( $filename ) );
+		$file_url = $real_path ? rawurlencode ( $file_real_path ) : $filename;
 		
 		// READ THE MIME TYPE
 		$mimetype = is_file ( $filename ) ? strtolower ( mime_content_type ( $filename ) ) : '';
@@ -6222,7 +6275,8 @@ SCRIPT
 		$rawname = TASK::PX_PER_WORD ( $rawname, $thumbsize - 20, $fontsize );
 		
 		// PREPARE THE PROPERTIES FOR THE HYPERLINK
-		$anchor_properties = ( $type == 'any' ) ? "target='_blank'" : "class='$anchor_class'" ;
+		$anchor_properties = ( $type == 'any' || $anchor_class == '' ) ?
+							 "target='_blank'" : "class='$anchor_class'" ;
 		
 		// BUILD THE HTML SCRIPT FOR THE HTML5 MEDIA ELEMENT
 		$result = str_replace ( "\r\n", "\r\n" . TASK::STRING_OF ( "\t", $tabs ),
