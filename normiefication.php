@@ -1294,6 +1294,21 @@ CLASS TASK
 	}
 	
 	/*///------------------------------------------------------------------------
+			>>> STRIP URI AND REDIRECT
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION STRIP_AND_REDIRECT()
+	{
+		$inscript = "";
+		// REMOVE THE URI AND REDIRECT
+		if ( strpos ( $_SERVER['REQUEST_URI'], '?' ) !== false )
+		{
+			$redirect = explode ( '?', $_SERVER['REQUEST_URI'] )[0];
+			$inscript = "window.location.href = '{$redirect}'";
+		}
+		die ( "<script type='text/javascript'>alert('ACCESS DENIED');$inscript</script>" );
+	}
+	
+	/*///------------------------------------------------------------------------
 			>>> CHECK IF A METHOD ACCEPTS THE LISTED PARAMETERS
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION ACCEPTED
@@ -4924,6 +4939,39 @@ CLASS FILEMANAGER
 	}
 	
 	/*///------------------------------------------------------------------------
+			>>> CHECK IF FILE IS ALLOWED
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION FILE_IS_ALLOWED
+	(
+			string $filename,					// LOCATION OF FILE TO BE CHECKED
+			array $otherAllowedExtensions = [],	// LIST OF OTHER ALLOWED EXTENSIONS
+			bool $blockConnection = true		// BLOCK CONNECTION TO FILE?
+	): BOOL
+	{
+		$fn = rawurldecode ($filename);
+		if ( is_readable ( $fn ) ) {
+			$mimetype = is_file ( $fn ) ? strtolower ( mime_content_type ( $fn ) ) : '';
+			$extension = strtolower ( pathinfo ( $fn, PATHINFO_EXTENSION ) );
+			if (
+				is_dir ( $fn ) ||
+				( GUI_ELEMENTS::IS_AUDIO ( $fn, $mimetype, $extension ) ) ||
+				( GUI_ELEMENTS::IS_VIDEO ( $fn, $mimetype, $extension ) ) ||
+				( GUI_ELEMENTS::IS_IMAGE ( $fn, $mimetype, $extension ) ) ||
+				( is_file ( $fn ) && $extension == 'zip' ) ||
+				( is_file ( $fn ) && $extension == 'ico' ) ||
+				( is_file ( $fn ) && in_array ( $extension, $otherAllowedExtensions ) )
+			)
+			{
+				return true;
+			}
+		}
+		
+		if ( $blockConnection ) die;
+		
+		return false;
+	}
+	
+	/*///------------------------------------------------------------------------
 			>>> BLOCK CONNECTION TO FILES
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION BLOCK_CONNECTIONS(): BOOL
@@ -4940,6 +4988,7 @@ CLASS FILEMANAGER
 							$this->DataLocation_RequestVariable,
 							$this->FullImage_RequestVariable,
 							$this->File_RequestVariable,
+							$this->Encode_RequestVariable,
 							$this->Stream_RequestVariable,
 							$this->URLThumb_RequestVariable,
 							$this->ZipFile_RequestVariable,
@@ -4947,6 +4996,7 @@ CLASS FILEMANAGER
 							$this->WatchMedia_RequestVariable,
 							$this->ListenToMedia_RequestVariable
 						];
+			$otherExtensions = array_merge ( $this->otherExtensions, $this->otherExtensions_add );
 			
 			// PREPARE HOST LOCATION INFO
 			$host_name = $_SERVER['HTTP_HOST'];
@@ -4967,6 +5017,10 @@ CLASS FILEMANAGER
 			foreach ($rkeys as $rkey) if ( isset ( $_REQUEST[$rkey] ) )
 			{
 				$location = str_replace ( '\\', '/', rawurldecode ( $_REQUEST[$rkey] ) );
+				if ( !$this->FILE_IS_ALLOWED( $location, $otherExtensions, false ) )
+				{
+					TASK::STRIP_AND_REDIRECT();
+				}
 				$is_url = preg_match ( '#^https?://#', strtolower ( $location ) );
 				$file_IP = $is_url ? gethostbyname ( parse_url($location)['host'] ) : '';
 				
@@ -5005,14 +5059,7 @@ CLASS FILEMANAGER
 					$is_url && $file_IP === $host_IP
 				)
 				{
-					$inscript = "";
-					// REMOVE THE URI AND REDIRECT
-					if ( strpos ( $_SERVER['REQUEST_URI'], '?' ) !== false )
-					{
-						$redirect = explode ( '?', $_SERVER['REQUEST_URI'] )[0];
-						$inscript = "window.location.href = '{$redirect}'";
-					}
-					die ( "<script type='text/javascript'>alert('ACCESS DENIED');$inscript</script>" );
+					TASK::STRIP_AND_REDIRECT();
 				}
 			}
 			
