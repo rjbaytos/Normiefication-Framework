@@ -70,6 +70,7 @@ $f->allow_full_access_from('192.168.1.2');				// THIS SHOULD ALLOW YOU TO HAVE F
 $f->DB_alerts_disabled					= false;		// DISABLE DATABASE ALERTS
 $f->no_cache							= false;		// STOP CACHING IMAGES?
 $f->allowaccess							= true;			// ALLOW LIMITED ACCESS TO FILE MANAGER
+$f->showFullPageURL						= false;		// SHOW HOSTNAME IN PAGE LINKS
 
 $f->workingDirectory					= 'files';		// PUBLIC WORKING DIRECTORY
 $f->AJAXElement							= 'div.ajax';	// TARGET ELEMENT OF FILE MANAGER AJAX LINKS
@@ -126,6 +127,8 @@ $f->DB_SelectDataColumn					= 'data';
 $f->DB_Table							= 'file';
 
 // OTHER REQUEST VARIABLES
+$f->CallURL_RequestVariable				= 'remote';					//
+$f->WebPage_RequestVariable				= 'page';					//
 $f->AJAXFileFetch_RequestVariable		= 'fetch';					//
 $f->DataLocation_RequestVariable		= 'dir';					//
 $f->FullImage_RequestVariable			= 'full';					//
@@ -169,7 +172,7 @@ echo <<<BODY
 	<head>
 		<meta charset="utf-8">
 		<link rel='icon' href='?resource=icon'/>
-		<title>{$_SERVER['HTTP_HOST']}</title>
+		<title>{$f->frontHost}</title>
 		<link rel='stylesheet' href='?script=css' type='text/css'/>
 		<script type='text/javascript' src='?resource=jquery331'></script>
 		<script type='text/javascript' src='?script=ui'></script>

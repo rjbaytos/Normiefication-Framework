@@ -1,12 +1,16 @@
 <?Php
 NAMESPACE { CLASS normiefication {} }
 NAMESPACE normiefication {
+	// CLASSES:
 	USE \finfo;					// REQUIRED FOR BROWSING FILES
 	USE \ReflectionMethod;		// REQUIRED FOR ANALYZING METHODS
 	USE \ReflectionFunction;	// REQUIRED SO THAT WE CAN REFLECT ANONYMOUS FUNCTIONS
 	USE \COM;					// REQUIRED FOR BROWSING FILES AND RUNNING BATCH WITHIN NAMESPACE
-	USE \ziparchive;			// REQUIRED FOR READING ZIP ARCHIVES
+	USE \ZipArchive;			// REQUIRED FOR READING ZIP ARCHIVES
 	USE \PDO;					// NEEDED FOR DATABASE
+	USE \DOMDocument;			// NEEDED FOR PARSING DOM
+	USE \DomXPath;				// NEEDED FOR PARSING DOM WITH A QUERY
+	// VARIABLE TYPES:
 	USE \Closure;				// USED FOR PASSING ANONYMOUS FUNCTIONS AS PARAMETERS
 	USE \PDOStatement;			// USED FOR PASSING PDOStatement AS PARAMETERS
 	USE \PDOException;			// USED FOR PDO ERROR HANDLING
@@ -58,7 +62,8 @@ CLASS TASK
 		'ECHO_URL_FILE'			=> [3, 1],		// POSSIBLE SETTINGS : 1, 3
 		'FOLDER'				=> [1, 3],		// POSSIBLE SETTINGS : 1, 3
 		'SCRIPT'				=> [1, 3],		// POSSIBLE SETTINGS : 1, 3
-		'LIST_ZIP_CONTENT'		=> [1, 3]		// POSSIBLE SETTINGS : 1, 3
+		'LIST_ZIP_CONTENT'		=> [1, 3],		// POSSIBLE SETTINGS : 1, 3
+		'CALLURL_REMOTE_EVAL'	=> [3, 4]		// POSSIBLE SETTINGS : 3, 4
 	];
 	PRIVATE STATIC $ALIAS =									// ALTERNATIVE NAMES FOR METHODS
 	[	'QUERY'			=> 'PDO_QUERY_RESULT',				// RUN QUERY
@@ -2046,6 +2051,34 @@ CLASS TASK
 	}
 	
 	/*///------------------------------------------------------------------------
+			>>> GET THE CURRENT URL SCHEME
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION GET_CURRENT_URL_SCHEME(): STRING
+	{
+		$request_scheme = '';
+		if ( !empty ( $_SERVER['REQUEST_SCHEME'] ) ) {
+			$request_scheme = $_SERVER['REQUEST_SCHEME'];
+		} elseif ( 	( !empty ( $_SERVER['HTTPS'] )			&& $_SERVER['HTTPS'] == 'on' ) ||
+					( !empty ( $_SERVER['SERVER_PORT'] )	&& $_SERVER['SERVER_PORT'] == '443' ) ) {
+			$request_scheme = 'https';
+		} else {
+			$request_scheme = 'http';
+		}
+		return $request_scheme;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> GET THE URL OF THE CURRENT HOST
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION GET_CURRENT_HOST_URL(): STRING
+	{
+		$scheme = SELF::GET_CURRENT_URL_SCHEME();
+		$httype = ( $scheme != '' ) ? "{$scheme}://" : "";
+		$currhost = isset ( $_SERVER['HTTP_HOST'] ) ? $_SERVER['HTTP_HOST'] . '/' : '';
+		return $currhost != '' ? $httype . $currhost : '';
+	}
+	
+	/*///------------------------------------------------------------------------
 			>>> DETECT SSL
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION HTTPS
@@ -2154,8 +2187,9 @@ CLASS TASK
 		)
 		{
 			// CHECK IF THE SERVER ACCEPTS GZIP ENCODING
-			if ( substr_count ( $_SERVER["HTTP_ACCEPT_ENCODING"], "gzip" ) )
-				ob_start("ob_gzhandler");
+			if	(	array_key_exists ( "HTTP_ACCEPT_ENCODING", $_SERVER ) &&
+					substr_count ( $_SERVER["HTTP_ACCEPT_ENCODING"], "gzip" )
+			)	ob_start("ob_gzhandler");
 		}
 	}
 	
@@ -4531,6 +4565,274 @@ CLASS TASK
 		return $query;
 	}
 	
+	
+	/*///------------------------------------------------------------------------
+	-----------------------------------------------------------------------------
+*		DATA MINING OPERATIONS
+	-----------------------------------------------------------------------------
+	/*///------------------------------------------------------------------------
+	
+	
+	/*///------------------------------------------------------------------------
+			>>> USE DOM CLASS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION MAKEDOM
+	(
+			string $url	// TARGET URL
+	)
+	{
+		$curl = curl_init ( $url );
+		curl_setopt ( $curl, CURLOPT_RETURNTRANSFER, TRUE );
+		$output = curl_exec ( $curl );
+		curl_close ( $curl );
+		$DOM = new DOMDocument;
+		@$DOM->loadHTML ( $output );
+		return $DOM;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SEARCH FOR OBJECTS IN DOM
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION SEARCHDOM
+	(
+			string $url,			// TARGET URL
+			string $query = "//*"	// SEARCH QUERY
+	)
+	{
+		$DOM = SELF::MAKEDOM ( $url );
+		$path = new DomXPath ( $DOM );
+		$nodes = $path->query ( $query );
+		return $nodes;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SEARCH FOR OBJECTS IN DOM BY ID
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION MINEBYID
+	(
+			string $url,	// TARGET URL
+			string $id		// ID TO BE SEARCHED FOR
+	): STRING
+	{
+		$DOM = SELF::MAKEDOM ( $url );
+		$result = $DOM->getElementByID ( $id );
+		return ( $result != NULL ) ? $result->textContent : '';
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SEARCH FOR OBJECTS IN DOM BY TAG
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION MINEBYTAGNAME
+	(
+			string $url,	// TARGET URL
+			string $tag		// TAG TO BE SEARCHED FOR
+	): ARRAY
+	{
+		$DOM = SELF::MAKEDOM ( $url );
+		$items = $DOM->getElementsByTagName ( $tag );
+		$return = [];
+		for ( $i = 0; $i < $items->length; $i++ )
+			$return[] = trim ( $items->item($i)->nodeValue );
+		return $return;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SEARCH FOR OBJECTS IN DOM BY CLASS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION MINEBYCLASS
+	(
+			string $url,	// TARGET URL
+			string $class	// CLASS TO BE SEARCHED FOR
+	): ARRAY
+	{
+		$nodes = SELF::SEARCHDOM ( $url, "//*[@class='$class']" );
+		$return = [];
+		foreach ( $nodes as $node )
+			$return[] = $node->nodeValue;
+		return $return;
+	}
+	
+	
+	/*///------------------------------------------------------------------------
+	-----------------------------------------------------------------------------
+*		REMOTE WEB CONTENT OPERATIONS
+	-----------------------------------------------------------------------------
+	/*///------------------------------------------------------------------------
+	
+	
+	/*///------------------------------------------------------------------------
+			>>> CALL REMOTE CONTENT AND ECHO RESULT
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION CALLURL
+	(
+			string $url	// TARGET URL
+	)
+	{
+		// GET THE FILE CONTENTS
+		$ch = curl_init();
+		$request_scheme = SELF::GET_CURRENT_URL_SCHEME();
+		$request_scheme = ( $request_scheme != '' ) ? "{$request_scheme}://" : "";
+		$curlopt_referer =	$request_scheme . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+		curl_setopt ( $ch, CURLOPT_URL, $url );
+		curl_setopt ( $ch, CURLOPT_RETURNTRANSFER, 1 );
+		curl_setopt ( $ch, CURLOPT_REFERER, $curlopt_referer );
+		$data = curl_exec ( $ch );
+		//$data = file_get_contents ( $url );
+		
+		// EXTRACT FILENAME AND MIME TYPE FROM HEADER
+		$headers = get_headers ( $url );
+		$filename = 'file';
+		$mime = '';
+		foreach ( $headers as $head ) {
+			// PARSE FILENAME IF THE HEADER CONTAINS THE 'FILENAME' KEYWORD
+			if ( stripos ( $head, 'filename' ) !== false && stripos ( $head, '=' ) !== false ) {
+				// SPLIT USING THE EQUAL SIGN
+				$filename = explode ( '=', $head )[1];
+				
+				// REMOVE QUOTES
+				$filename = str_replace ( '"', '', $filename );
+				$filename = str_replace ( "'", '', $filename );
+				
+				// EXTRACT THE FILE EXTENSION
+				$fn_parts = explode ( '.', $filename );
+				$lastpart = count ( $fn_parts ) - 1;
+				$extension = $lastpart > 0 ? strtolower ( $fn_parts [ $lastpart ] ) : '';
+				
+				// IF THE FILE EXTENSION IS CSS OR JS, USE THE PROPER MIME TYPE
+				// - AVOIDS INCORRECTLY SETTING MIMETYPE OF JAVASCRIPT AND CSS TO 'text/plain'
+				if ( $extension == 'css' ) {
+					$mime = 'text/css';
+				} elseif ( $extension == 'js' ) {
+					$mime = 'text/javascript';
+				} elseif ( $extension == 'txt' ) {
+					$mime = 'text/plain';
+				}
+			}
+			
+			// CHECK THE 'CONTENT-TYPE' KEYWORD IF IT EXISTS AND
+			// IF MIME IS NOT YET FOUND USING THE FILE EXTENSIONS
+			if ( stripos ( $head, 'content-type' ) !== false && $mime == '' ) {
+				if ( stripos ( $head, 'css' ) !== false ) {
+					$mime = 'text/css';
+				} elseif ( stripos ( $head, 'javascript' ) !== false ) {
+					$mime = 'text/javascript';
+				}
+			}
+		}
+		
+		// IF MIME TYPE IS STILL NOT FOUND, SEARCH THROUGH FINFO
+		if ( $mime == '' ) {
+			$getmime = ( new finfo ( FILEINFO_MIME_TYPE ) )->buffer ( $data );
+			$mime = stripos ( $getmime, 'text/plain' ) === false ? $getmime : 'text/html';
+		}
+		
+		// SET THE CONTENT HEADER AND OUTPUT THE DATA
+		header ( "Content-Type: $mime" );
+		header ( "Content-Disposition: FileName=\"$filename\"");
+		echo $data;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> PRODUCE A 'CALLURL' PHP SCRIPT TO EVALUATE REMOTELY
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION CALLURL_REMOTE_EVAL
+	(
+			string $url = ''	// TARGET URL
+	)
+	{
+		if ( $url == '' && isset ( $_SERVER['HTTP_HOST'] ) )
+		{
+			$scheme = SELF::GET_CURRENT_URL_SCHEME();
+			$scheme = ( $scheme != '' ) ? "{$scheme}://" : "";
+			$url = $scheme . $_SERVER['HTTP_HOST'];
+		}
+		
+		echo <<<urlscript
+	\$url = '$url';
+
+urlscript
+		.<<<'phpscript'
+	
+	// GRAB URI AND PASS IT ON THE PAGE REQUESTED
+	$uri = '';
+	if ( isset( $_SERVER['REQUEST_URI'] ) ) {
+		$uri = str_ireplace( $_SERVER['PHP_SELF'], '', $_SERVER['REQUEST_URI'] );
+	}
+	$url .= $uri;
+	
+	// GET THE FILE CONTENTS
+	$ch = curl_init();
+	$request_scheme = '';
+	if ( !empty ( $_SERVER['REQUEST_SCHEME'] ) ) {
+		$request_scheme = $_SERVER['REQUEST_SCHEME'];
+	} elseif (	( !empty ( $_SERVER['HTTPS'] )			&& $_SERVER['HTTPS'] == 'on' ) ||
+				( !empty ( $_SERVER['SERVER_PORT'] )	&& $_SERVER['SERVER_PORT'] == '443' ) ) {
+		$request_scheme = 'https';
+	} else {
+		$request_scheme = 'http';
+	}
+	$curlopt_referer =	$request_scheme . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+	curl_setopt ( $ch, CURLOPT_URL, $url );
+	curl_setopt ( $ch, CURLOPT_RETURNTRANSFER, 1 );
+	curl_setopt ( $ch, CURLOPT_REFERER, $curlopt_referer );
+	$data = curl_exec ( $ch );
+	
+	// EXTRACT FILENAME AND MIME TYPE FROM HEADER
+	$headers = get_headers ( $url );
+	$filename = 'file';
+	$mime = '';
+	foreach ( $headers as $head ) {
+		// PARSE FILENAME IF THE HEADER CONTAINS THE 'FILENAME' KEYWORD
+		if ( stripos ( $head, 'filename' ) !== false && stripos ( $head, '=' ) !== false ) {
+			// SPLIT USING THE EQUAL SIGN
+			$filename = explode ( '=', $head )[1];
+			
+			// REMOVE QUOTES
+			$filename = str_replace ( '"', '', $filename );
+			$filename = str_replace ( "'", '', $filename );
+			
+			// EXTRACT THE FILE EXTENSION
+			$fn_parts = explode ( '.', $filename );
+			$lastpart = count ( $fn_parts ) - 1;
+			$extension = $lastpart > 0 ? strtolower ( $fn_parts [ $lastpart ] ) : '';
+			
+			// IF THE FILE EXTENSION IS CSS OR JS, USE THE PROPER MIME TYPE
+			// - AVOIDS INCORRECTLY SETTING MIMETYPE OF JAVASCRIPT AND CSS TO 'text/plain'
+			if ( $extension == 'css' ) {
+				$mime = 'text/css';
+			} elseif ( $extension == 'js' ) {
+				$mime = 'text/javascript';
+			} elseif ( $extension == 'txt' ) {
+				$mime = 'text/plain';
+			}
+		}
+		
+		// CHECK THE 'CONTENT-TYPE' KEYWORD IF IT EXISTS AND
+		// IF MIME IS NOT YET FOUND USING THE FILE EXTENSIONS
+		if ( stripos ( $head, 'content-type' ) !== false && $mime == '' ) {
+			if ( stripos ( $head, 'css' ) !== false ) {
+				$mime = 'text/css';
+			} elseif ( stripos ( $head, 'javascript' ) !== false ) {
+				$mime = 'text/javascript';
+			}
+		}
+	}
+	
+	// IF MIME TYPE IS STILL NOT FOUND, SEARCH THROUGH FINFO
+	if ( $mime == '' ) {
+		$getmime = ( new finfo ( FILEINFO_MIME_TYPE ) )->buffer ( $data );
+		$mime = stripos ( $getmime, 'text/plain' ) === false ? $getmime : 'text/html';
+	}
+	
+	// SET THE CONTENT HEADER AND OUTPUT THE DATA
+	header ( "Content-Type: $mime" );
+	header ( "Content-Disposition: FileName=\"$filename\"");
+	echo $data;
+
+phpscript;
+		die;
+	}
+	
 }
 
 
@@ -4743,6 +5045,12 @@ CLASS FILEMANAGER
 	// OPEN FILE MANAGER TO THE INTERNET
 	PUBLIC $allowaccess				= false;						//
 	
+	// SHOW FULL URL ( i.e. http://localhost/page.php ) FOR PAGE LINKS
+	PUBLIC $showFullPageURL			= false;						//
+	
+	// FRONT-END/PUBLIC FACING HOST
+	PUBLIC $frontHost				= 'localhost';					//
+	
 	// DIRECTORY THAT SERVES AS YOUR 'HOME', PUBLIC FACING DIRECTORY
 	PUBLIC $workingDirectory		= '';							//
 	
@@ -4812,6 +5120,8 @@ CLASS FILEMANAGER
 	//////////////////////////////////////////////////////////////////
 	// POST/GET/REQUEST VARIABLE NAMES (UI):
 	//////////////////////////////////////////////////////////////////
+	PUBLIC $CallURL_RequestVariable				= 'remote';
+	PUBLIC $WebPage_RequestVariable				= 'page';
 	PUBLIC $AJAXFileFetch_RequestVariable		= 'fetch';
 	PUBLIC $DataLocation_RequestVariable		= 'dir';
 	PUBLIC $FullImage_RequestVariable			= 'full';
@@ -4832,6 +5142,15 @@ CLASS FILEMANAGER
 	PUBLIC $RangeEnd_RequestVariable			= 'end';
 	PUBLIC $WatchMedia_RequestVariable			= 'watch';
 	PUBLIC $ListenToMedia_RequestVariable		= 'listen';
+	// CallURL_RequestVariable
+	//		ENABLES EXTRACTING URL CONTENTS ON A REMOTE HOST USING FILE_GET_CONTENTS().
+	//		RETURNS A PHP SCRIPT WHICH CAN BE RAN USING EVAL().
+	//			i.e. eval ( file_get_contents ( 'http://localhost?remote=http://127.0.0.1' ) );
+	//			i.e. eval ( file_get_contents ( 'http://localhost?remote' ) );
+	// WebPage_RequestVariable
+	//		INDEPENDENT/NON-AJAX WEBPAGE LINK ON CURRENT HOST
+	//			i.e. http://localhost?page=path/to/webpage.php
+	//			i.e. http://localhost?page=http://localhost/path/to/webpage.php
 	// AJAXFileFetch_RequestVariable
 	//		REQUEST VARIABLE NAME AUTO-APPENDED BY SYSTEM FOR IDENIFYING AJAX LINKS.
 	//		WHEN ADDED TO A FILE URL, THE SYSTEM WILL DISPLAY THE FILE BROWSER HTML/UI
@@ -4916,6 +5235,10 @@ CLASS FILEMANAGER
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION __CONSTRUCT ( bool $run = null )
 	{
+		$this->frontHost = $_SERVER['HTTP_HOST'];
+		if ( isset ( $_SERVER['HTTP_REFERER'] ) ) {
+			$this->frontHost = parse_url ( $_SERVER['HTTP_REFERER'] )['host'];
+		}
 		$run = $run === null ? SELF::$AUTORUN : $run;
 		if ( $run ) $this->LISTEN();
 	}
@@ -4972,19 +5295,15 @@ CLASS FILEMANAGER
 	}
 	
 	/*///------------------------------------------------------------------------
-			>>> BLOCK CONNECTION TO FILES
+			>>> BLOCK CONNECTION TO FILE LOCATIONS
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION BLOCK_CONNECTIONS(): BOOL
 	{
-		if
-		(
-				!in_array ( $_SERVER['HTTP_HOST'], $this->WHITELIST ) ||
-				!in_array ( $_SERVER['HTTP_HOST'], $this->WHITELIST ) &&
-				!$this->allowaccess
-		)
+		if ( !in_array ( $_SERVER['HTTP_HOST'], $this->WHITELIST ) )
 		{
 			// REQUEST KEYS TO BE MONITORED
 			$rkeys =	[
+							$this->WebPage_RequestVariable,
 							$this->DataLocation_RequestVariable,
 							$this->FullImage_RequestVariable,
 							$this->File_RequestVariable,
@@ -4997,6 +5316,9 @@ CLASS FILEMANAGER
 							$this->ListenToMedia_RequestVariable
 						];
 			$otherExtensions = array_merge ( $this->otherExtensions, $this->otherExtensions_add );
+			
+			// EXTENSIONS APPLICABLE ONLY TO SPECIFIC REQUESTS
+			$specialExts [ $this->WebPage_RequestVariable ] = [ 'php' ];
 			
 			// PREPARE HOST LOCATION INFO
 			$host_name = $_SERVER['HTTP_HOST'];
@@ -5017,7 +5339,19 @@ CLASS FILEMANAGER
 			foreach ($rkeys as $rkey) if ( isset ( $_REQUEST[$rkey] ) )
 			{
 				$location = str_replace ( '\\', '/', rawurldecode ( $_REQUEST[$rkey] ) );
-				if ( !$this->FILE_IS_ALLOWED( $location, $otherExtensions, false ) )
+				
+				// CREATE TEMPORARY EXTENSION LIST
+				$exList = $otherExtensions;
+				if ( array_key_exists ( $rkey, $specialExts ) ) {
+					foreach ( $specialExts [ $rkey ] as $newExt ) {
+						$exList[] = $newExt;
+					}
+				}
+				
+				// CHECK IF THE FILE EXTENSIONS ARE VALID FOR THE GIVEN REQUEST
+				// CHECK IF THE CREDENTIALS ARE VALID
+				// CHECK IF THE LOCATION IS VALID FOR THE GIVEN CREDENTIAL
+				if ( !$this->FILE_IS_ALLOWED( $location, $exList, false ) )
 				{
 					TASK::STRIP_AND_REDIRECT();
 				}
@@ -5080,6 +5414,34 @@ CLASS FILEMANAGER
 	}
 	
 	/*///------------------------------------------------------------------------
+			>>> GO TO WEBPAGE
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION GOTOPAGE()
+	{
+		if ( isset ( $_GET[$this->WebPage_RequestVariable] ) ) {
+			// GET THE CURRENT HOST URL
+			$current_host = TASK::GET_CURRENT_HOST_URL();
+			$current_url = $_GET[$this->WebPage_RequestVariable];
+			if ( stripos ( $current_url, $current_host ) === FALSE ) {
+				$current_url = $current_host.$current_url;
+			}
+			
+			$ch = curl_init();
+			$request_scheme = TASK::GET_CURRENT_URL_SCHEME();
+			$request_scheme = ( $request_scheme != '' ) ? "{$request_scheme}://" : "";
+			$curlopt_referer =	$request_scheme . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+			curl_setopt ( $ch, CURLOPT_URL, $current_url );
+			curl_setopt ( $ch, CURLOPT_RETURNTRANSFER, 1 );
+			curl_setopt ( $ch, CURLOPT_REFERER, $curlopt_referer );
+			$data = curl_exec ( $ch );
+			
+			header ( "Content-Type: text/html" );
+			echo $data;
+			die;
+		}
+	}
+	
+	/*///------------------------------------------------------------------------
 			>>> CREATE UI
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION LISTEN()
@@ -5089,6 +5451,9 @@ CLASS FILEMANAGER
 		
 		// START CONTROLLING CONNECTIONS
 		$limitedAccess = $this->BLOCK_CONNECTIONS();
+		
+		// CHECK FOR REDIRECTS AND GO
+		$this->GOTOPAGE();
 		
 		// ELEMENT THAT DISPLAYS IMAGES, VIDEOS, AND MUSIC UPON AJAX REQUEST
 		$AJAXOverlayElement	= $this->AJAXOverlayElement;
@@ -5191,6 +5556,12 @@ CLASS FILEMANAGER
 		
 		// INITIALIZE CORE LIBRARY
 		$task = new TASK();
+		
+		// RETURN A PHP SCRIPT WHICH CAN BE RAN USING EVAL()
+		// FOR ACCESSING WEB CONTENTS FROM ANOTHER HOST
+		$task ( 'CALLURL_REMOTE_EVAL', $this->CallURL_RequestVariable );
+		
+		// CONFIGURE DATABASE
 		if ( $this->DB_alerts_disabled ) $task->DISABLE_PDO_ALERT();
 		$task($this->DB_username, $this->DB_password, $this->DB_host, $this->DB_database);
 		
@@ -5572,7 +5943,7 @@ CLASS FILEMANAGER
 						{
 							$resstring .= GUI_ELEMENTS::ICON (
 											$truepath,
-											'',
+											$this->WebPage_RequestVariable,
 											$thumbsize,
 											'',
 											'',
@@ -5580,7 +5951,8 @@ CLASS FILEMANAGER
 											$NumberOfTabs,
 											'',
 											NULL,
-											FALSE
+											FALSE,
+											$this->showFullPageURL
 										);
 						}
 					}
@@ -5860,19 +6232,19 @@ CLASS GUI_ELEMENTS
 
 <script>image_wait( 'img', 600 );</script>
 <style>
-img.icon, img.thumbnail, div.icon, div.thumbnail {
-	{$thumb}:	{$thumbsize}px;
-}
+	img.icon, img.thumbnail, div.icon, div.thumbnail {
+		{$thumb}:	{$thumbsize}px;
+	}
 
-div.container {
-	width:		{$containersize}px;
-}
+	div.container {
+		width:		{$containersize}px;
+	}
 
-div.container
-div.filename {
-	font-size:	{$fontsize}px;
-	width:		{$namesize}px;
-}
+	div.container
+	div.filename {
+		font-size:	{$fontsize}px;
+		width:		{$namesize}px;
+	}
 </style>
 
 SCRIPT
@@ -6229,7 +6601,8 @@ SCRIPT
 			int $tabs = 2,					// NUMBER OF TABS / INDENTATION
 			string $anchor_class = 'ajax',	// ANCHOR CLASS NAME
 			bool $echo_result = null,		// ECHO STRING RESULT?
-			bool $real_path = true			// USE REAL PATH?
+			bool $real_path = true,			// USE REAL PATH?
+			bool $absolute_url = false		// USE ABSOLUTE URL PATH FOR WEB PAGES?
 	): STRING
 	{
 		// SET DEFAULT VALUE FOR ECHO RESULT IF NOT SET
@@ -6250,6 +6623,12 @@ SCRIPT
 		
 		// GET THE FILE EXTENSION
 		$extension = strtolower ( pathinfo ( $filename, PATHINFO_EXTENSION ) );
+		
+		// SHOW ABSOLUTE URL FOR WEB PAGES
+		if ( $absolute_url && !$real_path && in_array ( $extension, SELF::$WEBPAGE_EXTENSIONS ) )
+		{
+			$file_url = TASK::GET_CURRENT_HOST_URL() . $file_url;
+		}
 		
 		// SET THE EXTENSIONS CONSIDERED AS AUDIO
 		$audio_ext = ['mp3', 'wav'];
