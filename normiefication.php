@@ -5609,23 +5609,10 @@ PHPSCRIPT
 	}
 	
 	/*///------------------------------------------------------------------------
-			>>> CREATE UI
+			>>> UPDATE REMOTE WEBPAGE
 	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION LISTEN()
+	FINAL PUBLIC FUNCTION UPDATE()
 	{
-		// DENY UNTRUSTED HOSTS
-		$this->DENY_HOSTS();
-		
-		// INITIALIZE WORK DIRECTORY
-		$this->INITIALIZE_WORKDIR();
-		
-		// START CONTROLLING CONNECTIONS
-		$limitedAccess = $this->BLOCK_CONNECTIONS();
-		
-		// CHECK FOR REDIRECTS AND GO
-		$this->GOTOPAGE();
-		
-		// RUN AUTO-UPDATE
 		if (
 				$this->remote_autoupdate &&
 				$this->CallURL_RequestVariable != '' &&
@@ -5652,7 +5639,7 @@ PHPSCRIPT
 <?php
 	ini_set('default_socket_timeout', 5);
 	\$php = @file_get_contents ( '{$ref_host}?{$this->CallURL_RequestVariable}{$callURL}' );
-	if ( \$php == '' ) {
+	if ( \$php === '' ) {
 		\$php_self = htmlspecialchars ( \$_SERVER['PHP_SELF'], ENT_QUOTES, "utf-8" );
 		header("location: {\$php_self}");
 	} elseif ( \$php === false ) {
@@ -5671,6 +5658,27 @@ UPDATESCRIPT
 			}
 			die ( $scrUpdate );
 		}
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> CREATE UI
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION LISTEN()
+	{
+		// DENY UNTRUSTED HOSTS
+		$this->DENY_HOSTS();
+		
+		// INITIALIZE WORK DIRECTORY
+		$this->INITIALIZE_WORKDIR();
+		
+		// START CONTROLLING CONNECTIONS
+		$limitedAccess = $this->BLOCK_CONNECTIONS();
+		
+		// CHECK FOR REDIRECTS AND GO
+		$this->GOTOPAGE();
+		
+		// RUN AUTO-UPDATE
+		$this->UPDATE();
 		
 		// ELEMENT THAT DISPLAYS IMAGES, VIDEOS, AND MUSIC UPON AJAX REQUEST
 		$AJAXOverlayElement	= $this->AJAXOverlayElement;
