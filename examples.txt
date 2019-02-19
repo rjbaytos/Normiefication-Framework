@@ -63,20 +63,27 @@ Examples:
 <?Php
 include('normiefication.php');
 normiefication\filemanager::$AUTORUN	= false;		// RUN FILE MANAGER IMMEDIATELY WHEN INSTANTIATED
+//normiefication\task::secure();						// ENSURE SSL CONNECTION
 
 $f = new normiefication\filemanager;					// INSTANTIATE FILE MANAGER
-$f->allow_full_access_from('192.168.1.2');				// THIS SHOULD ALLOW YOU TO HAVE FULL ACCESS
+//$f->allow_full_access_from('192.168.1.2');			// THIS SHOULD ALLOW YOU TO HAVE FULL ACCESS
+$f->denied_response_parameters ( 503, 'Unavailable' );	// RESPONSE TO DENIED/UNTRUSTED HOSTS
+//$f->trusted_hosts ( 'example.com' );					// TRUSTED HOSTS
 
 $f->DB_alerts_disabled					= false;		// DISABLE DATABASE ALERTS
 $f->no_cache							= false;		// STOP CACHING IMAGES?
 $f->allowaccess							= true;			// ALLOW LIMITED ACCESS TO FILE MANAGER
 $f->showFullPageURL						= false;		// SHOW HOSTNAME IN PAGE LINKS
+$f->remote_update						= false;		// ALLOW REMOTE UPDATES
+$f->remote_autoupdate					= false;		// ALLOW REMOTE AUTOMATIC UPDATES
 
 $f->workingDirectory					= 'files';		// PUBLIC WORKING DIRECTORY
 $f->AJAXElement							= 'div.ajax';	// TARGET ELEMENT OF FILE MANAGER AJAX LINKS
 $f->AJAXOverlayElement					= '.overlay';	// TARGET ELEMENT OF FILE MANAGER AJAX IMAGE LINKS
 $f->otherExtensions_add					= ['example'];	// OTHER FILE EXTENSIONS TO DETECT
 														// USE "$f->otherExtensions" TO OVERRIDE LIST
+$f->RemoteUpdate_NewScript				= '';			// REMOTE UPDATE SCRIPT
+$f->autoupdate_sourcefile				= '';			// PHP SCRIPT TO UPLOAD TO THE REMOTE FILE
 
 // DATABASE CREDENTIALS:
 $f->DB_username							= 'root';		// USERNAME
@@ -128,6 +135,7 @@ $f->DB_Table							= 'file';
 
 // OTHER REQUEST VARIABLES
 $f->CallURL_RequestVariable				= 'remote';					//
+$f->RemoteUpdate_RequestVariable		= 'update';					//
 $f->WebPage_RequestVariable				= 'page';					//
 $f->AJAXFileFetch_RequestVariable		= 'fetch';					//
 $f->DataLocation_RequestVariable		= 'dir';					//

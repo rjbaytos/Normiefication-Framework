@@ -54,6 +54,7 @@ CLASS TASK
 		'PDO_QUERY_RESULT'		=> [4, 2],		// POSSIBLE SETTINGS : 2, 4
 		'PDO_QUERY_ECHO'		=> [4, 2],		// POSSIBLE SETTINGS : 2, 4
 		'PDO_SELECT_AUTO_ECHO'	=> [4, 2],		// POSSIBLE SETTINGS : 2, 4
+		'REMOTE_UPDATE_SCRIPT'	=> [4, 2],		// POSSIBLE SETTINGS : 2, 4
 		'READ_ZIP_IMAGE'		=> [3, 1],		// POSSIBLE SETTINGS : 1, 3
 		'ECHO_RESOURCE'			=> [3, 1],		// POSSIBLE SETTINGS : 1, 3
 		'IMAGE_RESIZE_URL'		=> [3, 1],		// POSSIBLE SETTINGS : 1, 3
@@ -1304,10 +1305,11 @@ CLASS TASK
 	FINAL PUBLIC STATIC FUNCTION STRIP_AND_REDIRECT()
 	{
 		$inscript = "";
+		$srv_uri = SELF::SERVER_URL ( 'REQUEST_URI' );
 		// REMOVE THE URI AND REDIRECT
-		if ( strpos ( $_SERVER['REQUEST_URI'], '?' ) !== false )
+		if ( strpos ( $srv_uri, '?' ) !== false )
 		{
-			$redirect = explode ( '?', $_SERVER['REQUEST_URI'] )[0];
+			$redirect = explode ( '?', $srv_uri )[0];
 			$inscript = "window.location.href = '{$redirect}'";
 		}
 		die ( "<script type='text/javascript'>alert('ACCESS DENIED');$inscript</script>" );
@@ -2008,16 +2010,17 @@ CLASS TASK
 	}
 	
 	/*///------------------------------------------------------------------------
-			>>> GET THE FOLDER PATH OF THE CURRENT SCRIPT
+			>>> GET THE URL FOLDER PATH OF THE CURRENT SCRIPT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION PATH(): STRING
 	{
 		// REMOVE SLASHES OF HOST
-		$path = trim( "http://{$_SERVER['SERVER_NAME']}", '/' );
+		$path = trim( "{$_SERVER['REQUEST_SCHEME']}://{$_SERVER['SERVER_NAME']}", '/' );
+		$php_self = ltrim ( SELF::SERVER_URL ( 'PHP_SELF' ), '/' );
+		$fol_arr = SELF::DISASSEMBLE ( $php_self, '/' );
 		
 		// REMOVE SLASHES WHILE URL-ENCODING PER FOLDER
-		foreach ( SELF::DISASSEMBLE ( dirname( $_SERVER['PHP_SELF'] ), '/' ) as $folder )
-		{
+		if ( count ( $fol_arr ) > 1 ) foreach ( $fol_arr as $folder ) {
 			$path .= "/".rawurlencode ( trim ( $folder, '/' ) );
 		}
 		
@@ -2048,6 +2051,34 @@ CLASS TASK
 			global ${ $method = "_{$_SERVER['REQUEST_METHOD']}" };
 			return ( array_key_exists ( $array_key, $$method ) ? $$method [ $array_key ] : $default );
 		}
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> RETURN AN XSS SAFE URL FROM REQUEST
+	/*///------------------------------------------------------------------------
+	FINAL PRIVATE STATIC FUNCTION REQUEST_URL
+	(
+			string $request	// REQUEST KEY
+	): STRING
+	{
+		if ( isset ( $_REQUEST[$request] ) ) {
+			return htmlspecialchars ( $_REQUEST[$request], ENT_QUOTES, "utf-8" );
+		}
+		return '';
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> RETURN AN XSS SAFE URL FROM SERVER
+	/*///------------------------------------------------------------------------
+	FINAL PRIVATE STATIC FUNCTION SERVER_URL
+	(
+			string $request	// REQUEST KEY
+	): STRING
+	{
+		if ( isset ( $_SERVER[$request] ) ) {
+			return htmlspecialchars ( $_SERVER[$request], ENT_QUOTES, "utf-8" );
+		}
+		return '';
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -2094,7 +2125,7 @@ CLASS TASK
 			(
 				$_SERVER [ 'HTTP_HOST' ], '/'
 			), '\\'
-		).$_SERVER [ 'REQUEST_URI' ];
+		).SELF::SERVER_URL ( 'REQUEST_URI' );
 		
 		// RETURN TRUE IF CURRENT PAGE IS HTTPS
 		return
@@ -2118,6 +2149,7 @@ CLASS TASK
 			int $https_port = 443 // OPTIONAL SSL PORT
 	)
 	{
+		$url = '';
 		if ( !SELF::HTTPS ( $url, $https_port ) )
 		{
 			header("location: {$url}");
@@ -3446,7 +3478,8 @@ CLASS TASK
 		$blur		= $me->blur;
 		$resampled	= $me->resampled;
 		$simple		= $me->simple;
-		$scriptDir	= str_replace( '\\', '/', $_SERVER['PHP_SELF'] );
+		$php_self	= SELF::SERVER_URL ( 'PHP_SELF' );
+		$scriptDir	= str_replace ( '\\', '/', $php_self );
 		
 		$is_url = preg_match ( '#^https?://#', strtolower ( $true_url ) );
 		$parse = $is_url ? parse_url($true_url)['host'] : '';
@@ -4665,14 +4698,25 @@ CLASS TASK
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION CALLURL
 	(
-			string $url	// TARGET URL
+			string $url,			// TARGET URL
+			bool $passURI = true	// PASS CURRENT URI TO REQUESTED URL?
 	)
 	{
+		if ( $passURI ) {
+			// GRAB URI AND PASS IT TO THE PAGE REQUESTED
+			$uri = '';
+			if ( isset( $_SERVER['REQUEST_URI'] ) ) {
+				$uri = str_ireplace( $_SERVER['PHP_SELF'], '', $_SERVER['REQUEST_URI'] );
+			}
+			$url .= $uri;
+		}
+		
 		// GET THE FILE CONTENTS
 		$ch = curl_init();
 		$request_scheme = SELF::GET_CURRENT_URL_SCHEME();
 		$request_scheme = ( $request_scheme != '' ) ? "{$request_scheme}://" : "";
-		$curlopt_referer =	$request_scheme . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+		$curlopt_referer = $request_scheme . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+		$curlopt_referer = !empty ( $_SERVER['HTTP_REFERER'] ) ? $_SERVER['HTTP_REFERER'] : $curlopt_referer;
 		curl_setopt ( $ch, CURLOPT_URL, $url );
 		curl_setopt ( $ch, CURLOPT_RETURNTRANSFER, 1 );
 		curl_setopt ( $ch, CURLOPT_REFERER, $curlopt_referer );
@@ -4738,7 +4782,7 @@ CLASS TASK
 	FINAL PUBLIC STATIC FUNCTION CALLURL_REMOTE_EVAL
 	(
 			string $url = ''	// TARGET URL
-	)
+	): STRING
 	{
 		if ( $url == '' && isset ( $_SERVER['HTTP_HOST'] ) )
 		{
@@ -4747,13 +4791,13 @@ CLASS TASK
 			$url = $scheme . $_SERVER['HTTP_HOST'];
 		}
 		
-		echo <<<urlscript
+		return <<<urlscript
 	\$url = '$url';
 
 urlscript
 		.<<<'phpscript'
 	
-	// GRAB URI AND PASS IT ON THE PAGE REQUESTED
+	// GRAB URI AND PASS IT TO THE PAGE REQUESTED
 	$uri = '';
 	if ( isset( $_SERVER['REQUEST_URI'] ) ) {
 		$uri = str_ireplace( $_SERVER['PHP_SELF'], '', $_SERVER['REQUEST_URI'] );
@@ -4771,7 +4815,8 @@ urlscript
 	} else {
 		$request_scheme = 'http';
 	}
-	$curlopt_referer =	$request_scheme . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+	$curlopt_referer = $request_scheme . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+	$curlopt_referer = !empty ( $_SERVER['HTTP_REFERER'] ) ? $_SERVER['HTTP_REFERER'] : $curlopt_referer;
 	curl_setopt ( $ch, CURLOPT_URL, $url );
 	curl_setopt ( $ch, CURLOPT_RETURNTRANSFER, 1 );
 	curl_setopt ( $ch, CURLOPT_REFERER, $curlopt_referer );
@@ -4830,7 +4875,30 @@ urlscript
 	echo $data;
 
 phpscript;
-		die;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> RETURN A SCRIPT FOR UPDATING A REMOTE PHP FILE
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION REMOTE_UPDATE_SCRIPT
+	(
+			string $newPHP = ''	// NEW PHP SCRIPT
+	): STRING
+	{
+		return	<<<phpscript
+	\$newPHP = <<<'newPHP'
+$newPHP
+
+newPHP;
+
+phpscript
+		.		<<<'updateScript'
+	$php_self = htmlspecialchars ( $_SERVER['PHP_SELF'], ENT_QUOTES, "utf-8" );
+	$file = fopen ( __DIR__ . DIRECTORY_SEPARATOR . basename ( $php_self ), 'w' );
+	fwrite ( $file, $newPHP );
+	fclose ( $file );
+
+updateScript;
 	}
 	
 }
@@ -5033,6 +5101,19 @@ CLASS FILEMANAGER
 	// DOMAINS WITH FULL ACCESS TO LOCAL FILES
 	PRIVATE $WHITELIST				= ['localhost', '127.0.0.1'];	//
 	
+	// WEBHOSTS ALLOWED TO ACCESS SITE ( LEAVE BLANK TO ALLOW ALL )
+	PRIVATE $TRUSTEDHOSTS			= [];							//
+	
+	// RESPONSE CODE IF UNTRUSTED HOST IS DENIED ACCESS
+	PRIVATE $DENIED_RESPONSE_CODE	= 503;							//
+	
+	// RESPONSE MESSAGE IF UNTRUSTED HOST IS DENIED ACCESS
+	PRIVATE $DENIED_RESPONSE_TEXT	=								//
+<<<DENIEDRESPONSE
+	<center><b>Access Denied</b></center>
+	<center>Unrecognized host.</center>
+DENIEDRESPONSE;
+	
 	// RUN THE LISTENER AT CONSTRUCT
 	PUBLIC STATIC $AUTORUN			= false;						//
 	
@@ -5047,6 +5128,12 @@ CLASS FILEMANAGER
 	
 	// SHOW FULL URL ( i.e. http://localhost/page.php ) FOR PAGE LINKS
 	PUBLIC $showFullPageURL			= false;						//
+	
+	// ENABLE REMOTE UPDATING
+	PUBLIC $remote_update			= false;						//
+	
+	// ENABLE REMOTE AUTOMATIC UPDATING
+	PUBLIC $remote_autoupdate		= false;						//
 	
 	// FRONT-END/PUBLIC FACING HOST
 	PUBLIC $frontHost				= 'localhost';					//
@@ -5073,7 +5160,13 @@ CLASS FILEMANAGER
 									  ];
 	
 	// OTHER EXTENSIONS ALLOWED (DO NOT OVERWRITE)
-	PUBLIC $otherExtensions_add		= [];
+	PUBLIC $otherExtensions_add		= [];							//
+	
+	// NEW SCRIPT FOR REMOTE UPDATE
+	PUBLIC $RemoteUpdate_NewScript	= '';							//
+	
+	// PHP SCRIPT TO UPLOAD TO THE REMOTE FILE
+	PUBLIC $autoupdate_sourcefile	= '';							//
 	
 	//////////////////////////////////////////////////////////////////
 	// DATABASE PROPERTIES
@@ -5121,6 +5214,7 @@ CLASS FILEMANAGER
 	// POST/GET/REQUEST VARIABLE NAMES (UI):
 	//////////////////////////////////////////////////////////////////
 	PUBLIC $CallURL_RequestVariable				= 'remote';
+	PUBLIC $RemoteUpdate_RequestVariable		= 'update';
 	PUBLIC $WebPage_RequestVariable				= 'page';
 	PUBLIC $AJAXFileFetch_RequestVariable		= 'fetch';
 	PUBLIC $DataLocation_RequestVariable		= 'dir';
@@ -5147,6 +5241,10 @@ CLASS FILEMANAGER
 	//		RETURNS A PHP SCRIPT WHICH CAN BE RAN USING EVAL().
 	//			i.e. eval ( file_get_contents ( 'http://localhost?remote=http://127.0.0.1' ) );
 	//			i.e. eval ( file_get_contents ( 'http://localhost?remote' ) );
+	// RemoteUpdate_RequestVariable
+	//		ENABLES UPDATING OF CURRENT REMOTE SCRIPT USING EVAL(FILE_GET_CONTENTS($URL)).
+	//		RETURNS A PHP SCRIPT WHICH CAN BE RAN USING EVAL().
+	//			i.e. eval ( file_get_contents ( 'http://localhost?update' ) );
 	// WebPage_RequestVariable
 	//		INDEPENDENT/NON-AJAX WEBPAGE LINK ON CURRENT HOST
 	//			i.e. http://localhost?page=path/to/webpage.php
@@ -5239,6 +5337,7 @@ CLASS FILEMANAGER
 		if ( isset ( $_SERVER['HTTP_REFERER'] ) ) {
 			$this->frontHost = parse_url ( $_SERVER['HTTP_REFERER'] )['host'];
 		}
+		$this->frontHost = strtolower ( $this->frontHost );
 		$run = $run === null ? SELF::$AUTORUN : $run;
 		if ( $run ) $this->LISTEN();
 	}
@@ -5259,6 +5358,74 @@ CLASS FILEMANAGER
 		$this->WHITELIST = func_get_args();
 		$this->WHITELIST[] = 'localhost';
 		$this->WHITELIST[] = '127.0.0.1';
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> ALLOW SITE ACCESS TO THESE HOSTS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION TRUSTED_HOSTS()
+	{
+		$this->TRUSTEDHOSTS = func_get_args();
+		$this->TRUSTEDHOSTS[] = 'localhost';
+		$this->TRUSTEDHOSTS[] = '127.0.0.1';
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET DENIED RESPONSE CODE AND TEXT
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION DENIED_RESPONSE_PARAMETERS
+	(
+			int $code = 503,	// RESPONSE CODE
+			string $text = ''	// RESPONSE TEXT WHEN HOST IS DENIED
+	)
+	{
+		$this->DENIED_RESPONSE_CODE = $code;
+		$this->DENIED_RESPONSE_TEXT = $text;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> DENY UNTRUSTED HOSTS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION DENY_HOSTS()
+	{
+		if ( count ( $this->TRUSTEDHOSTS ) > 0 ) {
+			$deny = true;
+			
+			// READ THROUGH THE LIST WHILE CREATING A STRING OF HOSTS
+			$hostlist = "";
+			foreach ( $this->TRUSTEDHOSTS as $host ) {
+				if ( strtolower ( $host ) == $this->frontHost ) {
+					$deny = false;
+					break;
+				}
+				$hostlist .= strtolower ( "$host," );
+			}
+			$hostlist = rtrim ( $hostlist, ',' );
+			
+			// IF CURRENT HOST IS NOT ON LIST
+			if ( $deny ) {
+				if ( !isset ( $_GET [ $this->CallURL_RequestVariable ] ) ) {
+					http_response_code ( $this->DENIED_RESPONSE_CODE );
+					die ( $this->DENIED_RESPONSE_TEXT );
+				} else {
+					echo ( <<<PHPSCRIPT
+
+	if (	!in_array ( strtolower ( \$_SERVER['HTTP_HOST'] ),
+			explode ( ',', '{$hostlist}' ) )
+	) {
+		http_response_code ( {$this->DENIED_RESPONSE_CODE} );
+		die(
+<<<'RESPONSETEXT'
+{$this->DENIED_RESPONSE_TEXT}
+RESPONSETEXT
+		);
+	}
+
+PHPSCRIPT
+					);
+				}
+			}
+		}
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -5446,6 +5613,9 @@ CLASS FILEMANAGER
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION LISTEN()
 	{
+		// DENY UNTRUSTED HOSTS
+		$this->DENY_HOSTS();
+		
 		// INITIALIZE WORK DIRECTORY
 		$this->INITIALIZE_WORKDIR();
 		
@@ -5454,6 +5624,53 @@ CLASS FILEMANAGER
 		
 		// CHECK FOR REDIRECTS AND GO
 		$this->GOTOPAGE();
+		
+		// RUN AUTO-UPDATE
+		if (
+				$this->remote_autoupdate &&
+				$this->CallURL_RequestVariable != '' &&
+				isset ( $_GET[$this->CallURL_RequestVariable] ) &&
+				is_file ( $this->autoupdate_sourcefile )
+		) {
+			$trueFilePath = realpath ( $this->autoupdate_sourcefile );
+			$fcontents = file_get_contents ( $trueFilePath );
+			$scrUpdate = TASK::REMOTE_UPDATE_SCRIPT ( $fcontents );
+			$newFileName = $trueFilePath . '.bak';
+			$fnctr = 0;
+			while ( file_exists ( $newFileName ) ) {
+				$newFileName = $trueFilePath . "_{$fnctr}.bak";
+				$fnctr++;
+			}
+			rename ( $trueFilePath, $newFileName );
+			
+			if ( trim ( $fcontents ) == '' ) {
+				$callURL = $_GET[$this->CallURL_RequestVariable];
+				$ref_host = ( $callURL == '' ) ? TASK::GET_CURRENT_HOST_URL() : $callURL;
+				$callURL = ( $callURL !== '' ) ? "=$callURL" : '';
+				$scrUpdate = TASK::REMOTE_UPDATE_SCRIPT (
+<<<UPDATESCRIPT
+<?php
+	ini_set('default_socket_timeout', 5);
+	\$php = @file_get_contents ( '{$ref_host}?{$this->CallURL_RequestVariable}{$callURL}' );
+	if ( \$php == '' ) {
+		\$php_self = htmlspecialchars ( \$_SERVER['PHP_SELF'], ENT_QUOTES, "utf-8" );
+		header("location: {\$php_self}");
+	} elseif ( \$php === false ) {
+		http_response_code ( 503 );
+		echo <<<SERVERDOWN
+<center><b>Failed to Connect</b></center>
+<center>The remote HTTP server is currently offline.</center>
+<center>Please try again later.</center>
+SERVERDOWN;
+	} else {
+		eval ( \$php );
+	}
+?>
+UPDATESCRIPT
+				);
+			}
+			die ( $scrUpdate );
+		}
 		
 		// ELEMENT THAT DISPLAYS IMAGES, VIDEOS, AND MUSIC UPON AJAX REQUEST
 		$AJAXOverlayElement	= $this->AJAXOverlayElement;
@@ -5559,7 +5776,19 @@ CLASS FILEMANAGER
 		
 		// RETURN A PHP SCRIPT WHICH CAN BE RAN USING EVAL()
 		// FOR ACCESSING WEB CONTENTS FROM ANOTHER HOST
-		$task ( 'CALLURL_REMOTE_EVAL', $this->CallURL_RequestVariable );
+		$task ( 'CALLURL_REMOTE_EVAL', $this->CallURL_RequestVariable, function($r){die($r);} );
+		
+		// RETURN A PHP SCRIPT WHICH CAN BE RAN USING EVAL()
+		// FOR UPDATING A REMOTE WEB PAGE
+		if ( $this->remote_update ) {
+			$task ( 'REMOTE_UPDATE_SCRIPT',
+					$this->RemoteUpdate_RequestVariable,
+					[ $this->RemoteUpdate_NewScript ],
+					function ( $newPHPScript ) {
+						die ( $newPHPScript );
+					}
+			);
+		}
 		
 		// CONFIGURE DATABASE
 		if ( $this->DB_alerts_disabled ) $task->DISABLE_PDO_ALERT();
