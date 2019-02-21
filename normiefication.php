@@ -1719,9 +1719,12 @@ CLASS TASK
 		];
 		
 		$pxlen = 0;
+		$prevlen = 0;
+		$spaceSize = ( 10 + $boldOffset ) * $multiplier;
 		
 		foreach ( explode ( ' ', $string ) as $word )
 		{
+			$wordLength = 0;
 			foreach ( SELF::MB_STR_SPLIT ( $word ) as $char )
 			{
 				$px = ( 16 + $boldOffset ) * $multiplier;
@@ -1747,16 +1750,41 @@ CLASS TASK
 				
 				if ( $pxlen >= $pxlimit )
 				{
-					$pxlen = 0;
-					$result .= $separator;
+					if ( strrpos ( $result, ' ' ) !== false ) {
+						$arr = explode ( ' ', $result );
+						$last_index = count ( $arr ) - 1;
+						$curr_res = '';
+						for ( $arrctr = 0; $arrctr < $last_index ; $arrctr++ ) {
+							$curr_res .= $arr [ $arrctr ] . ' ';
+						}
+						$result = rtrim ( $curr_res ) . $separator . $arr [ $last_index ];
+						$pxlen = $wordLength;
+					} else {
+						$result .= $separator;
+						$pxlen = 0;
+					}
+					$prevlen = 0;
 				}
 				
+				$wordLength += $px;
 				$pxlen += $px;
 				$result .= $char;
 			}
 			
-			$result .= ' ';
-			$pxlen = $countSpaces ? $pxlen + ( ( 10 + $boldOffset ) * $multiplier ) : 0;
+			if ( !$countSpaces ) {
+				$twoWordSize = $prevlen + $spaceSize + $pxlen;
+				if ( $twoWordSize >= $pxlimit ) {
+					$pxlen = 0;
+					$prevlen = 0;
+					$result .= $separator;
+				} else {
+					$prevlen += $pxlen;
+					$result .= ' ';
+				}
+			} else {
+				$result .= ' ';
+				$pxlen += $spaceSize;
+			}
 		}
 		
 		return trim ( $result );
@@ -3342,7 +3370,7 @@ CLASS TASK
 	(
 			string $resourceName = 'FILES::error404',	// FILE DATA/BLOB
 			string $lock = 'auto',						// RESIZE BASED ON HEIGHT / WIDTH / AUTO
-			int $max_size = 130,						// SET MAX SIZE OF HEIGHT / WIDTH
+			float $max_size = 130,						// SET MAX SIZE OF HEIGHT / WIDTH
 			bool $no_cache = false,						// CACHE IMAGE?
 			bool $blur = false,							// BLUR IMAGE DURING RESIZE?
 			bool $resampled = true,						// USE RESAMPLING? (CAN BE SLOWER)
@@ -3375,7 +3403,7 @@ CLASS TASK
 			string $data,			// FILE DATA/BLOB
 			string $filename = '',	// PREFERRED FILENAME
 			string $lock = 'auto',	// RESIZE BASED ON HEIGHT / WIDTH / AUTO
-			int $max_size = 130,	// SET MAX SIZE OF HEIGHT / WIDTH
+			float $max_size = 130,	// SET MAX SIZE OF HEIGHT / WIDTH
 			bool $no_cache = false,	// CACHE IMAGE?
 			bool $blur = false,		// BLUR IMAGE DURING RESIZE?
 			bool $resampled = true,	// USE RESAMPLING? (CAN BE SLOWER)
@@ -3528,7 +3556,7 @@ CLASS TASK
 	(
 			string $data,			// IMAGE DATA
 			string $lock = 'auto',	// RESIZE BASED ON HEIGHT / WIDTH / AUTO
-			int $max_size = 130,	// SET MAX SIZE OF HEIGHT / WIDTH
+			float $max_size = 130,	// SET MAX SIZE OF HEIGHT / WIDTH
 			string $file = '',		// FILE LOCATION IF AVAILABLE
 			bool $no_cache = false,	// DISABLE IMAGE CACHE?
 			bool $blur = false,		// BLUR IMAGE DURING RESIZE?
@@ -3930,7 +3958,7 @@ CLASS TASK
 	(
 			string $file,			// PATH TO FILE
 			string $lock = 'auto',	// RESIZE BASED ON HEIGHT / WIDTH / AUTO
-			int $max_size = 130,	// SET MAX SIZE OF HEIGHT / WIDTH
+			float $max_size = 130,	// SET MAX SIZE OF HEIGHT / WIDTH
 			bool $save = false		// SAVE THUMBNAIL?
 	): BOOL
 	{
@@ -5320,6 +5348,7 @@ DENIEDRESPONSE;
 	PUBLIC $display_image_properties			= "class='imagepreview'";
 	PUBLIC $thumbnail_adjustment_orientation	= 'auto';
 	PUBLIC $thumbsize							= 100;
+	PUBLIC $mobile_size_multiplier				= 3.75;
 	
 	//////////////////////////////////////////////////////////////////
 	// OUTPUT HTML STRING
@@ -5707,6 +5736,7 @@ UPDATESCRIPT
 		$rend				= $this->RangeEnd_RequestVariable;
 		$rwatch				= $this->WatchMedia_RequestVariable;
 		$rlisten			= $this->ListenToMedia_RequestVariable;
+		$size_multiplier	= $this->mobile_size_multiplier;
 		
 		// INITIALIZE JAVASCRIPT PARAMETERS
 		if ( $scriptparsrvar == '*' )
@@ -5935,6 +5965,7 @@ UPDATESCRIPT
 		$this->files .= GUI_ELEMENTS::STYLE (
 								$lock,
 								$thumbsize,
+								$size_multiplier,
 								$NumberOfTabs
 						);
 		$this->files .= GUI_ELEMENTS::DISKS (
@@ -6443,7 +6474,8 @@ CLASS GUI_ELEMENTS
 	FINAL PUBLIC STATIC FUNCTION STYLE
 	(
 			string $lock = 'auto',		// ADJUST WIDTH/HEIGHT/AUTO
-			int $thumbsize = 150,		// SIZE OF THUMBNAIL IN PX
+			float $thumbsize = 150,		// SIZE OF THUMBNAIL IN PX
+			float $mult = 2,			// SIZE MULTIPLIER WHEN LESS THAN 1000PX
 			int $tabs = 2,				// NUMBER OF TABS / INDENTATION
 			bool $echo_result = null	// ECHO STRING RESULT?
 	): STRING
@@ -6454,14 +6486,12 @@ CLASS GUI_ELEMENTS
 		// USE THE IMAGE WIDTH AS THE DEFAULT THUMBNAIL CSS SIZE LIMIT
 		$thumb = ( $lock != 'width' && $lock != 'height' ) ? 'width' : $lock;
 		
-		// (COMPUTE THE CONTAINER SIZE) MAKE THE CONTAINER SIZE 20 PIXELS LARGER THAN THE TUMBNAIL
-		$containersize = $thumbsize + 20;
-		
-		// SET THE SIZE OF THE DIV CONTAINING THE FILENAME
-		$namesize = ( $lock != 'width' && $lock != 'auto' ) ? "100%" : "{$containersize}px";
-		
 		// COMPUTE THE FONTSIZE BASED ON THE SIZE OF THE THUMBNAIL
 		$fontsize = $thumbsize / 10;
+		
+		// COMPUTE SIZE IF THE WEB BROWSER IS LESS THAN 1000PX
+		$thumbsize_1000 = $thumbsize * $mult;
+		$fontsize_1000 = $fontsize * $mult;
 		
 		// FINALIZE THE CSS SCRIPT
 		$result = str_replace ( "\r\n", "\r\n" . TASK::STRING_OF ( "\t", $tabs ),
@@ -6469,18 +6499,24 @@ CLASS GUI_ELEMENTS
 
 <script>image_wait( 'img', 600 );</script>
 <style>
-	img.icon, img.thumbnail, div.icon, div.thumbnail {
-		{$thumb}:	{$thumbsize}px;
-	}
+		img.icon, img.thumbnail, div.icon, div.thumbnail {
+			{$thumb}:	{$thumbsize}px;
+		}
 
-	div.container {
-		width:		{$containersize}px;
-	}
+		div.container
+		div.filename {
+			font-size:	{$fontsize}px;
+		}
+	
+	@media screen and (max-width: 1000px) {
+		img.icon, img.thumbnail, div.icon, div.thumbnail {
+			{$thumb}:	{$thumbsize_1000}px;
+		}
 
-	div.container
-	div.filename {
-		font-size:	{$fontsize}px;
-		width:		{$namesize}px;
+		div.container
+		div.filename {
+			font-size:	{$fontsize_1000}px;
+		}
 	}
 </style>
 
@@ -6831,10 +6867,10 @@ SCRIPT
 	(
 			string $file_url,				// FILE/FOLDER URL
 			string $file_varname = '',		// FILE/FOLDER VARIABLE NAME
-			int $thumbsize = 150,			// SIZE OF THUMBNAIL IN PX
+			float $thumbsize = 150,			// SIZE OF THUMBNAIL IN PX
 			string $url_extras = '',		// EXTRA PARAMETERS FOR ANCHOR
 			string $rawname = '',			// RAW FILE NAME WITHOUT EXTENSION
-			int $fontsize = 0,				// FONTSIZE IN PX
+			float $fontsize = 0,			// FONTSIZE IN PX
 			int $tabs = 2,					// NUMBER OF TABS / INDENTATION
 			string $anchor_class = 'ajax',	// ANCHOR CLASS NAME
 			bool $echo_result = null,		// ECHO STRING RESULT?
@@ -6983,8 +7019,8 @@ SCRIPT
 			string $anchor_varname = '',				// VARIABLE NAME FOR ANCHOR
 			string $image_varname = '',					// VARIABLE NAME FOR IMAGE THUMBNAIL
 			string $anchor_properties = "class='ajax'",	// ADDITIONAL PROPERTIES FOR ANCHOR
-			int $thumbsize = 150,						// SIZE OF THUMBNAIL IN PX
-			int $fontsize = 0,							// FONTSIZE IN PX
+			float $thumbsize = 150,						// SIZE OF THUMBNAIL IN PX
+			float $fontsize = 0,						// FONTSIZE IN PX
 			int $tabs = 2,								// NUMBER OF TABS / INDENTATION
 			string $rawname = '',						// RAW FILE NAME WITHOUT EXTENSION
 			bool $echo_result = null					// ECHO STRING RESULT?
@@ -7069,8 +7105,8 @@ SCRIPT
 			string $anchor_props = "target='_blank'",	// ADDITIONAL PROPERTIES FOR ANCHOR
 			string $zip_varname_th = '',				// VARIABLE NAME FOR ZIP FILE ( THUMBNAIL MODE )
 			string $content_varname_th = '',			// VARIABLE NAME FOR ZIP CONTENT ( THUMBNAIL MODE )
-			int $thumbsize = 150,						// SIZE OF THUMBNAIL IN PX
-			int $fontsize = 0,							// FONTSIZE IN PX
+			float $thumbsize = 150,						// SIZE OF THUMBNAIL IN PX
+			float $fontsize = 0,						// FONTSIZE IN PX
 			int $tabs = 2,								// NUMBER OF TABS / INDENTATION
 			bool $display_all = null,					// DISPLAY ALL ZIP CONTENT?
 			bool $echo_result = null					// ECHO STRING RESULT?
@@ -8033,6 +8069,10 @@ img.icon {
 	opacity:					0.97;
 	filter:						alpha(opacity=97);
 	visibility:					hidden;
+}
+
+div.container {
+	display:					inline-block;
 }
 
 div.container

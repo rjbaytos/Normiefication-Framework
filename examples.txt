@@ -167,6 +167,7 @@ $f->display_image_properties			= "class='imagepreview'";	//
 // ADJUST THUMBNAIL width/height/auto
 $f->thumbnail_adjustment_orientation	= 'auto';					//
 $f->thumbsize							= 100;						//
+$f->mobile_size_multiplier				= 2;						//
 
 // APPLY GZIP COMPRESSION
 normiefication\task::compress();
