@@ -2291,6 +2291,7 @@ CLASS TASK
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION DISKS(): ARRAY
 	{
+		if ( !class_exists ( 'COM' ) ) return [];
 		$fso = new COM ( 'Scripting.FileSystemObject' );
 		$drives = $fso->Drives;
 		$types = [ 'Unknown', 'Removable', 'Fixed', 'Network', 'CD-ROM', 'RAM Disk' ];
@@ -5362,9 +5363,9 @@ DENIEDRESPONSE;
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION __CONSTRUCT ( bool $run = null )
 	{
-		$this->frontHost = $_SERVER['HTTP_HOST'];
+		$this->frontHost = explode ( ':', $_SERVER['HTTP_HOST'] )[0];
 		if ( isset ( $_SERVER['HTTP_REFERER'] ) ) {
-			$this->frontHost = parse_url ( $_SERVER['HTTP_REFERER'] )['host'];
+			$this->frontHost = explode ( ':', parse_url ( $_SERVER['HTTP_REFERER'] )['host'] )[0];
 		}
 		$this->frontHost = strtolower ( $this->frontHost );
 		$run = $run === null ? SELF::$AUTORUN : $run;
@@ -5395,8 +5396,9 @@ DENIEDRESPONSE;
 	FINAL PUBLIC FUNCTION TRUSTED_HOSTS()
 	{
 		$this->TRUSTEDHOSTS = func_get_args();
-		$this->TRUSTEDHOSTS[] = 'localhost';
-		$this->TRUSTEDHOSTS[] = '127.0.0.1';
+		foreach ( $this->WHITELIST as $arg ) {
+			$this->TRUSTEDHOSTS[] = $arg;
+		}
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -5495,7 +5497,7 @@ PHPSCRIPT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION BLOCK_CONNECTIONS(): BOOL
 	{
-		if ( !in_array ( $_SERVER['HTTP_HOST'], $this->WHITELIST ) )
+		if ( !in_array ( explode ( ':', $_SERVER['HTTP_HOST'] )[0], $this->WHITELIST ) )
 		{
 			// REQUEST KEYS TO BE MONITORED
 			$rkeys =	[
@@ -5552,7 +5554,13 @@ PHPSCRIPT
 					TASK::STRIP_AND_REDIRECT();
 				}
 				$is_url = preg_match ( '#^https?://#', strtolower ( $location ) );
-				$file_IP = $is_url ? gethostbyname ( parse_url($location)['host'] ) : '';
+				
+				// GET CURRENT HOST
+				if ( $is_url ) {
+					$file_IP = explode ( ':', gethostbyname ( parse_url ( $location )[PHP_URL_HOST] ) )[0];
+				} else {
+					$file_IP = '';
+				}
 				
 				// GET REAL LOCATION IF FILE REQUESTED IS A LOCAL FILE
 				if ( !$is_url )
