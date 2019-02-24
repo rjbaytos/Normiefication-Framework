@@ -1304,15 +1304,15 @@ CLASS TASK
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION STRIP_AND_REDIRECT()
 	{
-		$inscript = "";
-		$srv_uri = SELF::SERVER_URL ( 'REQUEST_URI' );
-		// REMOVE THE URI AND REDIRECT
-		if ( strpos ( $srv_uri, '?' ) !== false )
-		{
-			$redirect = explode ( '?', $srv_uri )[0];
-			$inscript = "window.location.href = '{$redirect}'";
-		}
-		die ( "<script type='text/javascript'>alert('ACCESS DENIED');$inscript</script>" );
+		die (
+<<<'ALERT'
+<script type='text/javascript'>
+	alert('ACCESS DENIED');
+	l = window.location.href;
+	window.location.href = l.split('?')[0];
+</script>
+ALERT
+		);
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -5424,8 +5424,11 @@ DENIEDRESPONSE;
 			
 			// READ THROUGH THE LIST WHILE CREATING A STRING OF HOSTS
 			$hostlist = "";
+			$remote_host =	isset ( $_SERVER['REMOTE_HOST'] )?
+							explode ( ':', $_SERVER['REMOTE_HOST'] )[0]:
+							$this->frontHost;
 			foreach ( $this->TRUSTEDHOSTS as $host ) {
-				if ( strtolower ( $host ) == $this->frontHost ) {
+				if ( strtolower ( $host ) == $remote_host ) {
 					$deny = false;
 					break;
 				}
@@ -5441,7 +5444,7 @@ DENIEDRESPONSE;
 				} else {
 					echo ( <<<PHPSCRIPT
 
-	if (	!in_array ( strtolower ( \$_SERVER['HTTP_HOST'] ),
+	if (	!in_array ( strtolower ( explode ( ':', \$_SERVER['HTTP_HOST'] )[0] ),
 			explode ( ',', '{$hostlist}' ) )
 	) {
 		http_response_code ( {$this->DENIED_RESPONSE_CODE} );
@@ -5497,7 +5500,21 @@ PHPSCRIPT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION BLOCK_CONNECTIONS(): BOOL
 	{
-		if ( !in_array ( explode ( ':', $_SERVER['HTTP_HOST'] )[0], $this->WHITELIST ) )
+		$def_host	=	str_replace ( '::ffff:', '', $_SERVER['REMOTE_ADDR'] );
+		$host_name	=	isset ( $_SERVER['REMOTE_HOST'] )?
+						explode ( ':', $_SERVER['REMOTE_HOST'] )[0]:
+						$def_host != '::1' ? $def_host : '127.0.0.1';
+		$block		=	true;
+		
+		if (
+				$host_name == gethostbyname ( $this->frontHost ) &&
+				!in_array ( $this->frontHost, $this->WHITELIST ) &&
+				in_array ( $host_name, $this->WHITELIST  )
+		)
+		{
+			$block = false;
+		}
+		if ( $block && !in_array ( $host_name, $this->WHITELIST ) )
 		{
 			// REQUEST KEYS TO BE MONITORED
 			$rkeys =	[
@@ -5519,8 +5536,7 @@ PHPSCRIPT
 			$specialExts [ $this->WebPage_RequestVariable ] = [ 'php' ];
 			
 			// PREPARE HOST LOCATION INFO
-			$host_name = $_SERVER['HTTP_HOST'];
-			$host_IP = gethostbyname ( $_SERVER['HTTP_HOST'] );
+			$host_IP = gethostbyname ( $host_name );
 			$host_LAN_IP = $_SERVER['SERVER_ADDR'];
 			$host_local_name = gethostname();
 			$host_local_IP = gethostbyname(getHostname());

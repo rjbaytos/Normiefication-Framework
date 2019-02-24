@@ -66,9 +66,9 @@ normiefication\filemanager::$AUTORUN	= false;		// RUN FILE MANAGER IMMEDIATELY W
 //normiefication\task::secure();						// ENSURE SSL CONNECTION
 
 $f = new normiefication\filemanager;					// INSTANTIATE FILE MANAGER
-//$f->allow_full_access_from('192.168.1.2');			// THIS SHOULD ALLOW YOU TO HAVE FULL ACCESS
+//$f->allow_full_access_from('192.168.1.2');			// DEVICES THAT WILL HAVE FULL ACCESS TO FILE MANAGER
 $f->denied_response_parameters ( 503, 'Unavailable' );	// RESPONSE TO DENIED/UNTRUSTED HOSTS
-//$f->trusted_hosts ( 'example.com' );					// TRUSTED HOSTS
+//$f->trusted_hosts ( 'example.com' );					// DEVICES THAT WILL HAVE ACCESS TO FILE MANAGER
 
 $f->DB_alerts_disabled					= false;		// DISABLE DATABASE ALERTS
 $f->no_cache							= false;		// STOP CACHING IMAGES?
