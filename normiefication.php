@@ -2291,40 +2291,64 @@ ALERT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION DISKS(): ARRAY
 	{
-		if ( !class_exists ( 'COM' ) ) return [];
-		$fso = new COM ( 'Scripting.FileSystemObject' );
-		$drives = $fso->Drives;
-		$types = [ 'Unknown', 'Removable', 'Fixed', 'Network', 'CD-ROM', 'RAM Disk' ];
 		$return = [];
-		foreach ( $drives as $drive )
-		{
-			$driveInfo = $fso->GetDrive ( $drive );
-			$letter = $driveInfo->DriveLetter . ":/";
-			$name = "[Drive not ready]";
-			$type = $types[$driveInfo->DriveType];
-			$space = 0;
-			$size = 0;
-			
-			if ( $driveInfo->DriveType == 3 )
+		if ( class_exists ( 'COM' ) ) {
+			$fso = new COM ( 'Scripting.FileSystemObject' );
+			$drives = $fso->Drives;
+			$types = [ 'Unknown', 'Removable', 'Fixed', 'Network', 'CD-ROM', 'RAM Disk' ];
+			foreach ( $drives as $drive )
 			{
-				$name = $driveInfo->Sharename;
+				$driveInfo = $fso->GetDrive ( $drive );
+				$letter = $driveInfo->DriveLetter . ":/";
+				$name = "[Drive not ready]";
+				$type = $types[$driveInfo->DriveType];
+				$space = 0;
+				$size = 0;
+				
+				if ( $driveInfo->DriveType == 3 )
+				{
+					$name = $driveInfo->Sharename;
+				}
+				else if ( $driveInfo->IsReady )
+				{
+					$name = $driveInfo->VolumeName;
+					$space = $driveInfo->FreeSpace;
+					$size = $driveInfo->TotalSize;
+				}
+				
+				$return[] = [
+								'letter'=>$letter,
+								'name'	=>$name,
+								'type'	=>$type,
+								'space'	=>$space,
+								'size'	=>$size
+							];
 			}
-			else if ( $driveInfo->IsReady )
-			{
-				$name = $driveInfo->VolumeName;
-				$space = $driveInfo->FreeSpace;
-				$size = $driveInfo->TotalSize;
-			}
-			
-			$return[] = [
-							'letter'=>$letter,
-							'name'	=>$name,
-							'type'	=>$type,
-							'space'	=>$space,
-							'size'	=>$size
-						];
 		}
-		
+		elseif ( strtoupper ( PHP_OS ) == 'LINUX' ) {
+			$return[] = [
+							'letter'=>'/sdcard',
+							'name'	=>'PHONE',
+							'space'	=>disk_free_space ( '/sdcard' )
+						];
+			
+			$storages = '/storage';
+			if ( is_dir ( $storages ) && ( $dh = opendir ( $storages ) ) ) {
+				// ENSURE STANDARD PATH / URL FORMAT
+				$dir = rtrim ( SELF::STANDARD_PATH ( realpath ( $storages ) ), '\\/' ) . '/';
+				
+				// READ THE DIRECTORY CONTENTS
+				while ( ( $file = readdir ( $dh ) ) !== false) {
+					if ( $file != '.' && $file != '..' && is_readable ( $dir.$file ) ) {
+						$return[] = [
+										'letter'=>$dir.$file,
+										'name'	=>$file,
+										'space'	=>disk_free_space ( $dir.$file )
+									];
+					}
+				}
+			}
+		}
 		return $return;
 	}
 	
@@ -4723,6 +4747,18 @@ ALERT
 	
 	
 	/*///------------------------------------------------------------------------
+			>>> GET IPV4 ADDRESS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION GETIPV4
+	(
+			string $url	// TARGET URL
+	)
+	{
+		$ip = $url == '::1' ? '127.0.0.1' : str_ireplace ( '::ffff:', '', gethostbyname ( $url ) );
+		return explode ( ':', $ip )[0];
+	}
+	
+	/*///------------------------------------------------------------------------
 			>>> CALL REMOTE CONTENT AND ECHO RESULT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION CALLURL
@@ -5133,6 +5169,9 @@ CLASS FILEMANAGER
 	// WEBHOSTS ALLOWED TO ACCESS SITE ( LEAVE BLANK TO ALLOW ALL )
 	PRIVATE $TRUSTEDHOSTS			= [];							//
 	
+	// DEVICES THAT WILL HAVE ACCESS TO REMOTE SCRIPT
+	PRIVATE $SCRIPTPATHS			= [];							//
+	
 	// RESPONSE CODE IF UNTRUSTED HOST IS DENIED ACCESS
 	PRIVATE $DENIED_RESPONSE_CODE	= 503;							//
 	
@@ -5397,7 +5436,24 @@ DENIEDRESPONSE;
 	{
 		$this->TRUSTEDHOSTS = func_get_args();
 		foreach ( $this->WHITELIST as $arg ) {
-			$this->TRUSTEDHOSTS[] = $arg;
+			if ( !in_array ( $arg, $this->TRUSTEDHOSTS ) ) {
+				$this->TRUSTEDHOSTS[] = $arg;
+			}
+		}
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> ALLOW REMOTE SCRIPT ACCESS TO THESE HOSTS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SCRIPT_PATHS()
+	{
+		foreach ( func_get_args() as $arg ) {
+			foreach ( gethostbynamel ( $arg ) as $hostIP ) {
+				$ip = explode ( ':', strtolower ( $hostIP ) )[0];
+				if ( !in_array ( $ip, $this->SCRIPTPATHS ) ) {
+					$this->SCRIPTPATHS[] = $ip;
+				}
+			}
 		}
 	}
 	
@@ -5419,45 +5475,96 @@ DENIEDRESPONSE;
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION DENY_HOSTS()
 	{
-		if ( count ( $this->TRUSTEDHOSTS ) > 0 ) {
-			$deny = true;
-			
-			// READ THROUGH THE LIST WHILE CREATING A STRING OF HOSTS
-			$hostlist = "";
-			$remote_host =	isset ( $_SERVER['REMOTE_HOST'] )?
-							explode ( ':', $_SERVER['REMOTE_HOST'] )[0]:
-							$this->frontHost;
-			foreach ( $this->TRUSTEDHOSTS as $host ) {
-				if ( strtolower ( $host ) == $remote_host ) {
-					$deny = false;
-					break;
-				}
-				$hostlist .= strtolower ( "$host," );
+		$allIPAdd	=	[];
+		$script_p	=	'';
+		
+		if (	isset ( $_GET[$this->CallURL_RequestVariable] ) &&
+				!empty ( $this->SCRIPTPATHS )
+		) {
+			if ( !in_array ( TASK::GETIPV4( $_SERVER['REMOTE_ADDR'] ), $this->SCRIPTPATHS ) ) {
+				http_response_code ( $this->DENIED_RESPONSE_CODE );
+				die ( $this->DENIED_RESPONSE_TEXT );
 			}
-			$hostlist = rtrim ( $hostlist, ',' );
+			
+			$script_p = implode ( ',', $this->SCRIPTPATHS );
+		}
+		
+		foreach ( $this->TRUSTEDHOSTS as $arg ) {
+			$ip_stripped = TASK::GETIPV4( $arg );
+			if ( !in_array ( $ip_stripped, $allIPAdd ) ) {
+				$allIPAdd[] = $ip_stripped;
+			}
+		}
+		
+		foreach ( $this->SCRIPTPATHS as $arg ) {
+			$ip_stripped = TASK::GETIPV4( $arg );
+			if ( !in_array ( $ip_stripped, $allIPAdd ) ) {
+				$allIPAdd[] = $ip_stripped;
+			}
+		}
+		
+		if ( count ( $this->TRUSTEDHOSTS ) > 0 ) {
+			// READ THROUGH THE LIST WHILE CREATING A STRING OF HOSTS
+			$remote_host	=	isset ( $_SERVER['REMOTE_HOST'] )?
+								explode ( ':', $_SERVER['REMOTE_HOST'] )[0]:
+								$this->frontHost;
+			$thisHostIP		=	explode ( ':', gethostbyname ( $_SERVER['HTTP_HOST'] ) )[0];
 			
 			// IF CURRENT HOST IS NOT ON LIST
-			if ( $deny ) {
-				if ( !isset ( $_GET [ $this->CallURL_RequestVariable ] ) ) {
-					http_response_code ( $this->DENIED_RESPONSE_CODE );
-					die ( $this->DENIED_RESPONSE_TEXT );
-				} else {
-					echo ( <<<PHPSCRIPT
+			if
+			(
+					(
+						!isset ( $_GET [ $this->CallURL_RequestVariable ] ) &&
+						!in_array ( $remote_host, $this->TRUSTEDHOSTS )
+					)
+					||
+					(
+						isset ( $_GET [ $this->CallURL_RequestVariable ] ) &&
+						!in_array ( TASK::GETIPV4( $_SERVER['REMOTE_ADDR'] ), $allIPAdd )
+					)
+			) {
+				http_response_code ( $this->DENIED_RESPONSE_CODE );
+				die ( $this->DENIED_RESPONSE_TEXT );
+			} elseif ( isset ( $_GET [ $this->CallURL_RequestVariable ] ) ) {
+				$trustedIPs = implode ( ',', $allIPAdd );
+				$trustedHosts = implode ( ',', $this->TRUSTEDHOSTS );
+				echo (
+<<<PHPSCRIPT
 
-	if (	!in_array ( strtolower ( explode ( ':', \$_SERVER['HTTP_HOST'] )[0] ),
-			explode ( ',', '{$hostlist}' ) )
-	) {
+	\$GETIPV4 = function ( \$url ) {
+		\$ip = \$url == '::1' ? '127.0.0.1' : str_ireplace ( '::ffff:', '', gethostbyname ( \$url ) );
+		return explode ( ':', \$ip )[0];
+	};
+	\$remAddr = \$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
+	\$script_p = explode ( ',', '{$script_p}' );
+	\$thisHostAd =	isset ( \$_SERVER['REMOTE_HOST'] )?
+					explode ( ':', \$_SERVER['REMOTE_HOST'] )[0]:
+					'{$remote_host}';
+	\$thisHostIP =	\$GETIPV4( \$thisHostAd );
+	
+	\$isPath = in_array ( \$remAddr, \$script_p );
+	\$requestFound = isset ( \$_GET [ '{$this->CallURL_RequestVariable}' ] );
+	\$isMyWebHost = in_array ( \$thisHostAd, explode ( ',', '{$trustedHosts}' ) );
+	\$isTrustedIP = in_array ( \$thisHostIP, explode ( ',', '{$trustedIPs}' ) );
+	
+	if	(
+			// IF REQUEST IS NOT FOUND, AND IP IS A FRONT-END BUT NOT TRUSTED
+			( !\$requestFound && !\$isTrustedIP && \$isPath && !\$isMyWebHost ) ||
+			// IF REQUEST IS FOUND AND IP IS NOT TRUSTED OR IP
+			// IS NOT A PATH OR IP IS NOT A RECOGNIZED WEBHOST
+			( \$requestFound && ( !\$isTrustedIP || !\$isPath || !\$isMyWebHost ) )
+		)
+	{
 		http_response_code ( {$this->DENIED_RESPONSE_CODE} );
 		die(
-<<<'RESPONSETEXT'
+<<<RESPONSETEXT
 {$this->DENIED_RESPONSE_TEXT}
 RESPONSETEXT
 		);
 	}
 
 PHPSCRIPT
-					);
-				}
+				);
 			}
 		}
 	}
@@ -5686,7 +5793,7 @@ PHPSCRIPT
 			if ( trim ( $fcontents ) == '' ) {
 				$callURL = $_GET[$this->CallURL_RequestVariable];
 				$ref_host = ( $callURL == '' ) ? TASK::GET_CURRENT_HOST_URL() : $callURL;
-				$callURL = ( $callURL !== '' ) ? "=$callURL" : '';
+				$callURL = ( $callURL !== '' ) ? '=' . urlencode ( $callURL ) : '';
 				$scrUpdate = TASK::REMOTE_UPDATE_SCRIPT (
 <<<UPDATESCRIPT
 <?php
@@ -6603,10 +6710,14 @@ DRIVE
 		if ( !$limitedAccess ) foreach ( TASK::DISKS() as $drive )
 		{
 			// READ THE DRIVE SPACE
-			$space = TASK::BYTES($drive['space']);
+			$space = ( array_key_exists ( 'space', $drive ) ) ? TASK::BYTES($drive['space']) : 'unknown size';
 			
 			// URLENCODE THE DRIVE LETTER
 			$url = rawurlencode ( $drive['letter'] );
+			
+			// GET SHORTENED DRIVE NAME
+			$drv = strtoupper ( ltrim ( str_ireplace ( '/storage/', '', $drive['letter'] ), '/' ) ) . ':/';
+			$driveLabel =	( strtoupper ( PHP_OS ) !== 'LINUX' ) ? $drive['letter'] : $drv;
 			
 			// CREATE THE THUMBNAIL FOR THE DISK
 			$diskDrives .= str_replace
@@ -6618,7 +6729,7 @@ DRIVE
 			<img id = 'drive' class = 'icon' />
 		</div>
 		<div class = 'filename'>
-			[{$drive['letter']}]<br>{$drive['name']}<br>[{$space}]
+			[{$driveLabel}]<br>{$drive['name']}<br>[{$space}]
 		</div>
 	</a>
 </div>
