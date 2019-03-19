@@ -4789,7 +4789,11 @@ ALERT
 		//$data = file_get_contents ( $url );
 		
 		// EXTRACT FILENAME AND MIME TYPE FROM HEADER
-		$headers = get_headers ( $url );
+		$headers = @get_headers ( $url );
+		if ( !is_array ( $headers ) ) {
+			http_response_code ( 503 );
+			die ( 'Access Denied' );
+		}
 		$filename = 'file';
 		$mime = '';
 		foreach ( $headers as $head ) {
@@ -4888,7 +4892,11 @@ urlscript
 	$data = curl_exec ( $ch );
 	
 	// EXTRACT FILENAME AND MIME TYPE FROM HEADER
-	$headers = get_headers ( $url );
+	$headers = @get_headers ( $url );
+	if ( !is_array ( $headers ) ) {
+		http_response_code ( 503 );
+		die ( 'Access Denied' );
+	}
 	$filename = 'file';
 	$mime = '';
 	foreach ( $headers as $head ) {
@@ -5026,17 +5034,18 @@ CLASS MEDIA
 		ob_get_clean();
 		
 		// GET FILE PROPERTIES
-		$this->start = 0;												// GET STARTING BYTES
-		$this->size  = filesize ( $this->path );						// GET FILE SIZE
-		$this->end   = $this->size - 1;									// GET ENDING BYTES
-		$mimetype = strtolower ( mime_content_type ( $this->path ) );	// GET CONTENT TYPE
+		$this->start = 0;																// GET STARTING BYTES
+		$this->size  = filesize ( $this->path );										// GET FILE SIZE
+		$this->end   = $this->size - 1;													// GET ENDING BYTES
+		$mimetype = strtolower ( mime_content_type ( $this->path ) );					// GET CONTENT TYPE
+		$fileExtension = strtolower ( pathinfo ( $this->path, PATHINFO_EXTENSION ) );	// FILE EXTENSION
 		if
 		(
 			// IF THE CURRENT FILE IS AN OCTET-STREAM
 				$mimetype = 'application/octet-stream' &&
 				
 			// AND THE FILE EXTENSION IS MP3
-				strtolower ( pathinfo ( $this->path, PATHINFO_EXTENSION ) ) == 'mp3'
+				$fileExtension == 'mp3'
 		)
 		{
 			// SET THE MIMETYPE TO AUDIO/MP3
@@ -5108,8 +5117,8 @@ CLASS MEDIA
 		{
 			// SET FILE SIZE AS DEFAULT LENGTH
 			header("Content-Length: {$this->size}");
-		}  
-		 
+		}
+		
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -5223,6 +5232,8 @@ DENIEDRESPONSE;
 											'mkv',					// video
 											'avi',					// video
 											'mpg',					// video
+											'flv',					// video
+											'wmv',					// video
 											'lnk',					// windows shortcut
 											'torrent'				// torrent file
 									  ];
@@ -5389,6 +5400,11 @@ DENIEDRESPONSE;
 	PUBLIC $thumbnail_adjustment_orientation	= 'auto';
 	PUBLIC $thumbsize							= 100;
 	PUBLIC $mobile_size_multiplier				= 3.75;
+	PUBLIC $number_of_tabs						= 3;
+	PUBLIC $file_display_limit					= 0;
+	PUBLIC $show_home_dir						= true;
+	PUBLIC $default_video_controls				= false;
+	PUBLIC $show_audio_controls					= true;
 	
 	//////////////////////////////////////////////////////////////////
 	// OUTPUT HTML STRING
@@ -5904,6 +5920,7 @@ UPDATESCRIPT
 		$iprop				= $this->display_image_properties;
 		$lock				= $this->thumbnail_adjustment_orientation;
 		$no_cache			= $this->no_cache;
+		$ajaxTargetElement	= $this->AJAXElement;
 		
 		// GET USER DECLARED THUMBSIZE
 		$thumbtemp			= TASK::ARRAY_KEY ( $_REQUEST, $thrvar, $this->thumbsize );
@@ -6080,19 +6097,48 @@ UPDATESCRIPT
 		$task('ZIPTHUMB', "{$zipthfrvar}, {$zipthcrvar}", [$thumbsize, $lock, $no_cache]);
 		$task('URLTHUMB', $urlthvar, [$thumbsize, $lock, $no_cache]);
 		
-		$IncludeHomeDirectory = true;
+		$IncludeHomeDirectory = $this->show_home_dir;
+		$videoControl = $this->default_video_controls;
+		$musicControl = $this->show_audio_controls;
 		$HomeDirectory = $this->workingDirectory;
-		$NumberOfTabs = 3;
-		$limit = 20;
+		$NumberOfTabs = $this->number_of_tabs;
+		$limit = $this->file_display_limit;
 		
-		$environment = "&$rstart=1&$rend=$limit&$thrvar=$thumbsize";
+		if ( isset ( $_REQUEST[$rwatch] ) && isset ($_REQUEST[$uirvar]) ) {
+			die ( GUI_ELEMENTS::VIDEO (
+				$_REQUEST[$rwatch],
+				$strvar,
+				$frvar,
+				'',
+				'',
+				'',
+				$NumberOfTabs,
+				NULL,
+				$videoControl
+			) );
+		}
+		if ( isset ( $_REQUEST[$rlisten] ) && isset ($_REQUEST[$uirvar]) ) {
+			die ( GUI_ELEMENTS::AUDIO (
+				$_REQUEST[$rlisten],
+				$strvar,
+				$frvar,
+				'',
+				'',
+				$NumberOfTabs,
+				NULL,
+				$musicControl
+			) );
+		}
+		
+		$limStr = ( $limit > 0 ) ? "&$rstart=1&$rend=$limit" : "";
+		$environment = "$limStr&$thrvar=$thumbsize";
 		$getVariables = "!$uirvar, !$thrvar, !$irvar, !$zipirvar, $locrvar, $rstart, $rend";
 		$folder = (	!isset ( $_REQUEST[$rwatch] ) ) ? '' :
 					rawurlencode ( dirname ( rawurldecode ( $_REQUEST[$rwatch] ) ) );
 		$folder = (	!isset ( $_REQUEST[$rlisten] ) ) ? $folder :
 					rawurlencode ( dirname ( rawurldecode ( $_REQUEST[$rlisten] ) ) );
 		$this->files  =	"\r\n" . TASK::STRING_OF("\t", $NumberOfTabs) .
-						"<script>AJAXLink('{$this->AJAXElement}', 'a.{$aclass}', '&{$uirvar}');</script>";
+						"<script>AJAXLink('{$ajaxTargetElement}', 'a.{$aclass}', '&{$uirvar}');</script>";
 		$this->files .= GUI_ELEMENTS::STYLE (
 								$lock,
 								$thumbsize,
@@ -6103,55 +6149,12 @@ UPDATESCRIPT
 								$locrvar,
 								$environment,
 								$NumberOfTabs,
-								$this->AJAXElement,
+								$ajaxTargetElement,
 								$IncludeHomeDirectory,
 								$HomeDirectory,
 								$this->anchor_class_name,
 								$limitedAccess
 						);
-		$this->files .= (	!isset ( $_REQUEST[$rwatch] ) ) ? '' :
-							GUI_ELEMENTS::ICON (
-								$folder,
-								$locrvar,
-								$thumbsize,
-								$environment,
-								'',
-								0,
-								$NumberOfTabs,
-								$this->anchor_class_name
-							).
-							GUI_ELEMENTS::VIDEO (
-								$_REQUEST[$rwatch],
-								$strvar,
-								$frvar,
-								'',
-								'',
-								'',
-								$NumberOfTabs,
-								NULL,
-								TRUE
-							);
-		$this->files .= (	!isset ( $_REQUEST[$rlisten] ) ) ? '' :
-							GUI_ELEMENTS::ICON (
-								$folder,
-								$locrvar,
-								$thumbsize,
-								$environment,
-								'',
-								0,
-								$NumberOfTabs,
-								$this->anchor_class_name
-							).
-							GUI_ELEMENTS::AUDIO (
-								$_REQUEST[$rlisten],
-								$strvar,
-								$frvar,
-								'',
-								'',
-								$NumberOfTabs,
-								NULL,
-								TRUE
-							);
 		if ( !$limitedAccess ) TASK::BEYONDROOT();
 		TASK::ROOTDIR ( $HomeDirectory );
 		TASK::WORKDIR ( $HomeDirectory );
@@ -6193,8 +6196,12 @@ UPDATESCRIPT
 				$e = intval ( TASK::REQUEST ( $rend ) );
 				$rawPath = ( $p = rawurldecode ( TASK::REQUEST ($locrvar) ) ) !== '' ? $p : $HomeDirectory;
 				$folderurl = rawurlencode ( TASK::STANDARD_PATH ( realpath ( $rawPath ) ) );
-				$extras = "{$locrvar}={$folderurl}&{$rstart}=1&{$rend}={$limit}&";
-				if ( $start + $step <= $result['count'] ) while ( $start <= $result['count'] )
+				$limStr = ( $limit > 0 ) ? "&{$rstart}=1&{$rend}={$limit}" : "";
+				$extras = "{$locrvar}={$folderurl}{$limStr}&";
+				$createFolders =	( $start + $step <= $result['count'] ) &&
+									( $e - $s + 1 < $result['count'] ) &&
+									( $limit > 0 );
+				if ( $createFolders ) while ( $start <= $result['count'] )
 				{
 					if ( $end > $result['count'] ) $end = $result['count'];
 					if ( $s != $start || $e < $end )
@@ -6213,6 +6220,15 @@ UPDATESCRIPT
 					$start = $end + 1;
 					$end = $start + $step;
 				}
+				$resstring_dir		= ''; // DIRECTORIES
+				$resstring_lnk		= ''; // LINK/SHORTCUT
+				$resstring_audio	= ''; // AUDIO
+				$resstring_video	= ''; // VIDEO
+				$resstring_image	= ''; // IMAGES
+				$resstring_zip		= ''; // ZIP FILES
+				$resstring_ico		= ''; // ICONS
+				$resstring_web		= ''; // WEBPAGES
+				$resstring_misc		= ''; // OTHERS
 				foreach ( $result as $fileResult )
 				{
 					$fn = rawurldecode ($fileResult);
@@ -6221,7 +6237,7 @@ UPDATESCRIPT
 					$extension = strtolower ( pathinfo ( $fn, PATHINFO_EXTENSION ) );
 					if ( is_dir ( $fn ) )
 					{
-						$resstring .= GUI_ELEMENTS::ICON (
+						$resstring_dir .= GUI_ELEMENTS::ICON (
 											$fileResult,
 											$locrvar,
 											$thumbsize,
@@ -6242,7 +6258,7 @@ UPDATESCRIPT
 							{
 								$rn .= $lnkn [ $lnkctr ];
 							}
-							$resstring .= GUI_ELEMENTS::ICON (
+							$resstring_lnk .= GUI_ELEMENTS::ICON (
 											$truepath,
 											$locrvar,
 											$thumbsize,
@@ -6256,7 +6272,7 @@ UPDATESCRIPT
 					}
 					else if ( GUI_ELEMENTS::IS_AUDIO ( $fn, $mimetype, $extension ) )
 					{
-						$resstring .= GUI_ELEMENTS::ICON (
+						$resstring_audio .= GUI_ELEMENTS::ICON (
 											$fileResult,
 											$rlisten,
 											$thumbsize,
@@ -6264,12 +6280,13 @@ UPDATESCRIPT
 											'',
 											0,
 											$NumberOfTabs,
-											$this->anchor_class_name
+											$this->anchor_class_name,
+											"target = '{$AJAXOverlayElement}' data-nopush"
 										);
 					}
 					else if ( GUI_ELEMENTS::IS_VIDEO ( $fn, $mimetype, $extension ) )
 					{
-						$resstring .= GUI_ELEMENTS::ICON (
+						$resstring_video .= GUI_ELEMENTS::ICON (
 											$fileResult,
 											$rwatch,
 											$thumbsize,
@@ -6277,16 +6294,17 @@ UPDATESCRIPT
 											'',
 											0,
 											$NumberOfTabs,
-											$this->anchor_class_name
+											$this->anchor_class_name,
+											"target = '{$AJAXOverlayElement}' data-nopush"
 										);
 					}
 					else if ( GUI_ELEMENTS::IS_IMAGE ( $fn, $mimetype, $extension ) )
 					{
-						$resstring .= GUI_ELEMENTS::THUMBNAIL (
+						$resstring_image .= GUI_ELEMENTS::THUMBNAIL (
 											$fileResult,
 											"{$extras}{$irvar}",
 											$urlthvar,
-											$ImageAnchorProperties,
+											"{$ImageAnchorProperties} data-nopush",
 											$thumbsize,
 											0,
 											$NumberOfTabs
@@ -6299,7 +6317,7 @@ UPDATESCRIPT
 						$zipContentKeys = "{$zipcrvar}, {$zipirvar}";
 						$zipThumbnailKey = $zipthfrvar;
 						$zipThumbnailContentKey = $zipthcrvar;
-						$resstring .= GUI_ELEMENTS::ZIP (
+						$resstring_zip .= GUI_ELEMENTS::ZIP (
 											$fileResult,
 											$rstart,
 											$rend,
@@ -6309,7 +6327,7 @@ UPDATESCRIPT
 											$zipContentKeys,
 											$this->anchor_class_name,
 											$environment,
-											$ImageAnchorProperties,
+											"{$ImageAnchorProperties} data-nopush",
 											$zipThumbnailKey,
 											$zipThumbnailContentKey,
 											$thumbsize,
@@ -6320,7 +6338,7 @@ UPDATESCRIPT
 					else if ( is_file ( $fn ) && $extension == 'ico' )
 					{
 						$linkProps = "target='_blank'";
-						$resstring .= GUI_ELEMENTS::THUMBNAIL (
+						$resstring_ico .= GUI_ELEMENTS::THUMBNAIL (
 											$fileResult,
 											$frvar,
 											$frvar,
@@ -6340,7 +6358,7 @@ UPDATESCRIPT
 						}
 						if ( $truepath != '' )
 						{
-							$resstring .= GUI_ELEMENTS::ICON (
+							$resstring_web .= GUI_ELEMENTS::ICON (
 											$truepath,
 											$this->WebPage_RequestVariable,
 											$thumbsize,
@@ -6348,6 +6366,7 @@ UPDATESCRIPT
 											'',
 											0,
 											$NumberOfTabs,
+											'',
 											'',
 											NULL,
 											FALSE,
@@ -6357,7 +6376,7 @@ UPDATESCRIPT
 					}
 					else if ( is_file ( $fn ) && in_array ( $extension, $miscExtensions ) )
 					{
-						$resstring .= GUI_ELEMENTS::ICON (
+						$resstring_misc .= GUI_ELEMENTS::ICON (
 											$fileResult,
 											$frvar,
 											$thumbsize,
@@ -6369,7 +6388,16 @@ UPDATESCRIPT
 										);
 					}
 				}
-				return $resstring;
+				return	$resstring.
+						$resstring_dir.
+						$resstring_lnk.
+						$resstring_audio.
+						$resstring_video.
+						$resstring_image.
+						$resstring_zip.
+						$resstring_ico.
+						$resstring_web.
+						$resstring_misc;
 			}
 		)) !== TASK::FAIL ? $taskresult : "";
 		
@@ -7008,6 +7036,7 @@ SCRIPT
 			float $fontsize = 0,			// FONTSIZE IN PX
 			int $tabs = 2,					// NUMBER OF TABS / INDENTATION
 			string $anchor_class = 'ajax',	// ANCHOR CLASS NAME
+			string $properties = '',		// ADDITIONAL ANCHOR PROPERTIES
 			bool $echo_result = null,		// ECHO STRING RESULT?
 			bool $real_path = true,			// USE REAL PATH?
 			bool $absolute_url = false		// USE ABSOLUTE URL PATH FOR WEB PAGES?
@@ -7053,9 +7082,6 @@ SCRIPT
 						'audio/wav'
 					];
 		
-		// SET THE MIME TYPES CONSIDERED AS VIDEO
-		$videos = ['video/mp4', 'video/webm', 'video/ogg', 'video/mkv'];
-		
 		// IF FILE IS NOT READABLE, EXIT SCRIPT
 		if ( !is_readable ( $filename ) ) return '';
 		
@@ -7067,7 +7093,7 @@ SCRIPT
 				) ? 'audio' : $type;
 		
 		// CHECK IF THE FILENAME IS A REFERENCE TO A VIDEO FILE
-		$type = ( in_array ( $mimetype, $videos ) ) ? 'video' : $type;
+		$type = ( in_array ( $mimetype, SELF::$VIDEO_MIME ) ) ? 'video' : $type;
 		
 		// CREATE A UNIQUE IDENTIFIER FOR THE FILE'S HTML ELEMENTS
 		$unique = md5 ( time() . rand ( 0,9999 ) );
@@ -7111,13 +7137,14 @@ SCRIPT
 		// PREPARE THE PROPERTIES FOR THE HYPERLINK
 		$anchor_properties = ( $type == 'any' || $anchor_class == '' ) ?
 							 "target='_blank'" : "class='$anchor_class'" ;
+		$properties = ( $properties != '' ) ? ' ' . trim ( $properties ) : '';
 		
 		// BUILD THE HTML SCRIPT FOR THE HTML5 MEDIA ELEMENT
 		$result = str_replace ( "\r\n", "\r\n" . TASK::STRING_OF ( "\t", $tabs ),
 <<<SCRIPT
 
 <div class = 'container' >
-	<a $anchor_properties href='$file_varname$file_url$url_extras' >
+	<a $anchor_properties href='$file_varname$file_url$url_extras'$properties >
 		<div class='icon'>
 			<img id='$type$unique' class='icon' />
 		</div>
@@ -7706,15 +7733,15 @@ function loader(targetElement,loading_style)
 }
 
 // ADD CONTROLS TO SELECTED OVERLAY ELEMENT
-function AJAXOverlayControls ( target )
+function AJAXOverlayControls ( targetElement )
 {
-	if ( typeof target === 'undefined' ) return false;
-	$(function(){
-		$(target).click(function(){
-			$(this).fadeOut(100, function(){
-				$(this).css( "display", "none" );
+	if ( typeof targetElement === 'undefined' ) return false;
+	$( document ).click ( function ( event ) { 
+		if ( !$( event.target ).closest( targetElement + ' *' ).length ) {
+			$( targetElement ).fadeOut( 100, function(){
+				$( this ).css( "display", "none" );
 			});
-		});
+		}
 	});
 	return true;
 }
@@ -7733,7 +7760,9 @@ function AJAXLink ( target, source, insert, attrib, rungif )
 		$(source).click(function()
 		{
 			var url = $(this).attr(attrib);
-			history.pushState({}, '', url);
+			if ( $(this).attr('data-nopush') === undefined ) {
+				history.pushState({}, '', url);
+			}
 			if	(	$(this).attr('target') !== undefined &&
 					$(this).attr('target').toLowerCase() !== '_blank'
 				) {
@@ -7937,7 +7966,7 @@ function video_controls(identifier)
 	//var controlHeight = controlGroupContainer.height();
 	
 	// CHANGE OPACITY OF CONTROLS
-	controlGroup.css('opacity', '0.6');
+	controlGroup.css('opacity', '0.9');
 	
 	setInterval ( function() {
 		if ( vid.controls == true )
@@ -7957,14 +7986,14 @@ function video_controls(identifier)
 	
 	setTimeout(function() {
 			controlGroup.fadeOut();
-	}, 1000);
+	}, 5000);
 	
 	$(document).on('mousemove', function() {
 		clearTimeout(timeout);
 		
 		timeout = setTimeout(function() {
 			controlGroup.fadeOut();
-		}, 3000);
+		}, 5000);
 	});
 	
 	controlGroupContainer.mouseenter(function(){
@@ -8001,10 +8030,6 @@ function video_controls(identifier)
 				
 				// UPDATE THE PLAY STATUS
 				videoIsPlaying = true;
-				
-				timeout = setTimeout(function() {
-					controlGroup.fadeOut();
-				}, 3000);
 			}
 			else
 			{
@@ -8016,26 +8041,35 @@ function video_controls(identifier)
 				
 				// UPDATE THE PLAY STATUS
 				videoIsPlaying = false;
-				
-				timeout = setTimeout(function() {
-					controlGroup.fadeOut();
-				}, 3000);
 			}
 		}
 		else
 		{
 			controlGroup.fadeIn();
 		}
+		
+		clearTimeout(timeout);
+		timeout = setTimeout(function() {
+			controlGroup.fadeOut();
+		}, 5000);
 	});
 	
 	// EVENT LISTENER FOR THE FULL-SCREEN BUTTON
 	vid.addEventListener("dblclick", function() {
 		isFullScreen = toggle_fullscreen ( vidContainer );
+		clearTimeout(timeout);
+		timeout = setTimeout(function() {
+			controlGroup.fadeOut();
+		}, 5000);
 	});
 	
 	// EVENT LISTENER FOR THE FULL-SCREEN BUTTON
 	fullScreenButton.addEventListener("click", function() {
 		isFullScreen = toggle_fullscreen ( vidContainer );
+		clearTimeout(timeout);
+		timeout = setTimeout(function() {
+			controlGroup.fadeOut();
+		}, 5000);
 	});
 	
 	// EVENT LISTENER FOR THE PLAY/PAUSE BUTTON
@@ -8062,6 +8096,10 @@ function video_controls(identifier)
 			// UPDATE THE PLAY STATUS
 			videoIsPlaying = false;
 		}
+		clearTimeout(timeout);
+		timeout = setTimeout(function() {
+			controlGroup.fadeOut();
+		}, 5000);
 	});
 	
 	// EVENT LISTENER FOR THE MUTE BUTTON
@@ -8082,6 +8120,10 @@ function video_controls(identifier)
 			// UPDATE THE BUTTON TEXT
 			muteButton.innerHTML = "&#128264;";
 		}
+		clearTimeout(timeout);
+		timeout = setTimeout(function() {
+			controlGroup.fadeOut();
+		}, 5000);
 	});
 	
 	// EVENT LISTENER FOR THE SEEK BAR
@@ -8121,17 +8163,26 @@ function video_controls(identifier)
 	seekBar.addEventListener("mousedown", function() {
 		vid.pause();
 		vid.currentTime = seekBar.value * vid.duration;
+		clearTimeout(timeout);
 	});
 	
 	// PLAY THE VIDEO WHEN THE SLIDER HANDLE IS DROPPED
 	seekBar.addEventListener("mouseup", function() {
 		if ( videoIsPlaying ) vid.play();
+		clearTimeout(timeout);
+		timeout = setTimeout(function() {
+			controlGroup.fadeOut();
+		}, 5000);
 	});
 	
 	// EVENT LISTENER FOR THE VOLUME BAR
 	volumeBar.addEventListener("change", function() {
 		// UPDATE THE VIDEO VOLUME
 		vid.volume = volumeBar.value;
+		clearTimeout(timeout);
+		timeout = setTimeout(function() {
+			controlGroup.fadeOut();
+		}, 5000);
 	});
 }
 

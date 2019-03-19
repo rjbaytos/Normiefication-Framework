@@ -169,6 +169,10 @@ $f->display_image_properties			= "class='imagepreview'";	//
 $f->thumbnail_adjustment_orientation	= 'auto';					//
 $f->thumbsize							= 100;						//
 $f->mobile_size_multiplier				= 2;						//
+$f->file_display_limit					= 0;						//
+$f->show_home_dir						= true;						//
+$f->default_video_controls				= false;					//
+$f->show_audio_controls					= true;						//
 
 // APPLY GZIP COMPRESSION
 normiefication\task::compress();
