@@ -540,48 +540,27 @@ CLASS TASK
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION VAR_TYPE( $VAR ): STRING
 	{
-		if ( is_null($VAR) )
-		{
+		if ( is_null($VAR) ) {
 			return 'NULL';
-		}
-		else if ( is_object($VAR) && is_callable($VAR) && ( $VAR instanceof Closure ) )
-		{
+		} else if ( is_object($VAR) && is_callable($VAR) && ( $VAR instanceof Closure ) ) {
 			return 'CLOSURE';
-		}
-		else if ( is_int ( $VAR ) || ( is_numeric ( $VAR ) && (int)$VAR == (float)$VAR ) )
-		{
+		} else if ( is_int ( $VAR ) || ( is_numeric ( $VAR ) && (int)$VAR == (float)$VAR ) ) {
 			return 'INTEGER';
-		}
-		else if ( is_float ( $VAR ) || is_numeric ( $VAR ) )
-		{
+		} else if ( is_float ( $VAR ) || is_numeric ( $VAR ) ) {
 			return 'DOUBLE';
-		}
-		else if ( is_string ( $VAR ) )
-		{
+		} else if ( is_string ( $VAR ) ) {
 			return 'STRING';
-		}
-		else if ( is_bool ( $VAR ) )
-		{
+		} else if ( is_bool ( $VAR ) ) {
 			return 'BOOLEAN';
-		}
-		else if ( is_array ( $VAR ) )
-		{
+		} else if ( is_array ( $VAR ) ) {
 			return 'ARRAY';
-		}
-		else if ( is_object ( $VAR ) )
-		{
+		} else if ( is_object ( $VAR ) ) {
 			return 'OBJECT';
-		}
-		else if ( is_resource ( $VAR ) )
-		{
+		} else if ( is_resource ( $VAR ) ) {
 			return 'RESOURCE';
-		}
-		else if ( gettype ( $VAR ) == 'resource (closed)' )
-		{
+		} else if ( gettype ( $VAR ) == 'resource (closed)' ) {
 			return 'RESOURCE (CLOSED)';
-		}
-		else if ( gettype ( $VAR ) == 'unknown type' )
-		{
+		} else if ( gettype ( $VAR ) == 'unknown type' ) {
 			return 'UNKNOWN TYPE';
 		}
 		
@@ -595,8 +574,7 @@ CLASS TASK
 	{
 		if ( func_num_args() === 0 ) return true;
 		
-		foreach ( func_get_args() as $arg )
-		{
+		foreach ( func_get_args() as $arg ) {
 			if ( empty ( $arg ) ) return true;
 		}
 		
@@ -612,10 +590,8 @@ CLASS TASK
 			string $type	// VARIABLE TYPE EXPECTED
 	): BOOL
 	{
-		foreach ( $array as $value )
-		{
-			if ( stripos ( gettype ( $value ), $type ) === false )
-			{
+		foreach ( $array as $value ) {
+			if ( stripos ( gettype ( $value ), $type ) === false ) {
 				return false;
 			}
 		}
@@ -5450,7 +5426,16 @@ DENIEDRESPONSE;
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION TRUSTED_HOSTS()
 	{
-		$this->TRUSTEDHOSTS = func_get_args();
+		foreach ( func_get_args() as $arg ) {
+			if ( is_array ( $arg ) ) {
+				if ( count ( $arg ) == 2 && !array_key_exists ( $arg[0], $this->TRUSTEDHOSTS ) ) {
+					$this->TRUSTEDHOSTS [ $arg[0] ] = $arg[1];
+				}
+			}
+			elseif ( !in_array ( $arg, $this->TRUSTEDHOSTS ) ) {
+				$this->TRUSTEDHOSTS[] = $arg;
+			}
+		}
 		foreach ( $this->WHITELIST as $arg ) {
 			if ( !in_array ( $arg, $this->TRUSTEDHOSTS ) ) {
 				$this->TRUSTEDHOSTS[] = $arg;
@@ -5464,11 +5449,17 @@ DENIEDRESPONSE;
 	FINAL PUBLIC FUNCTION SCRIPT_PATHS()
 	{
 		foreach ( func_get_args() as $arg ) {
-			foreach ( gethostbynamel ( $arg ) as $hostIP ) {
-				$ip = explode ( ':', strtolower ( $hostIP ) )[0];
-				if ( !in_array ( $ip, $this->SCRIPTPATHS ) ) {
-					$this->SCRIPTPATHS[] = $ip;
+			if ( is_array ( $arg ) ) {
+				if ( count ( $arg ) == 2 ) {
+					$ip = gethostbyname ( $arg[1] );
+					$ip = explode ( ':', strtolower ( $ip ) )[0];
+					if ( !array_key_exists ( $arg[0], $this->SCRIPTPATHS ) ) {
+						$this->SCRIPTPATHS[ $arg[0] ] = $ip;
+					}
 				}
+			}
+			elseif ( !in_array ( $arg, $this->SCRIPTPATHS ) ) {
+				$this->SCRIPTPATHS[] = $arg;
 			}
 		}
 	}
@@ -5489,11 +5480,8 @@ DENIEDRESPONSE;
 	/*///------------------------------------------------------------------------
 			>>> DENY UNTRUSTED HOSTS
 	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION DENY_HOSTS()
+	FINAL PUBLIC FUNCTION BLOCK_HOSTS()
 	{
-		$allIPAdd	=	[];
-		$script_p	=	'';
-		
 		if (	isset ( $_GET[$this->CallURL_RequestVariable] ) &&
 				!empty ( $this->SCRIPTPATHS )
 		) {
@@ -5501,37 +5489,46 @@ DENIEDRESPONSE;
 				http_response_code ( $this->DENIED_RESPONSE_CODE );
 				die ( $this->DENIED_RESPONSE_TEXT );
 			}
-			
-			$script_p = implode ( ',', $this->SCRIPTPATHS );
 		}
 		
-		foreach ( $this->TRUSTEDHOSTS as $arg ) {
+		$allIPAdd		= [];
+		$allNames		= [];
+		$trustedHostsIP = [];
+		
+		foreach ( $this->TRUSTEDHOSTS as $hname => $arg ) {
 			$ip_stripped = TASK::GETIPV4( $arg );
 			if ( !in_array ( $ip_stripped, $allIPAdd ) ) {
 				$allIPAdd[] = $ip_stripped;
 			}
+			if ( !in_array ( $ip_stripped, $trustedHostsIP ) ) {
+				$trustedHostsIP[] = $ip_stripped;
+			}
+			if ( is_string ( $hname ) ) {
+				$allNames[$hname] = " '{$hname}' => '{$ip_stripped}'";
+			} else {
+				$allNames[$ip_stripped] = " '{$ip_stripped}' => '{$ip_stripped}'";
+			}
 		}
 		
-		foreach ( $this->SCRIPTPATHS as $arg ) {
+		foreach ( $this->SCRIPTPATHS as $hname => $arg ) {
 			$ip_stripped = TASK::GETIPV4( $arg );
 			if ( !in_array ( $ip_stripped, $allIPAdd ) ) {
 				$allIPAdd[] = $ip_stripped;
+			}
+			if ( is_string ( $hname ) ) {
+				$allNames[$hname] = " '{$hname}' => '{$ip_stripped}'";
+			} else {
+				$allNames[$ip_stripped] = " '{$ip_stripped}' => '{$ip_stripped}'";
 			}
 		}
 		
 		if ( count ( $this->TRUSTEDHOSTS ) > 0 ) {
-			// READ THROUGH THE LIST WHILE CREATING A STRING OF HOSTS
-			$remote_host	=	isset ( $_SERVER['REMOTE_HOST'] )?
-								explode ( ':', $_SERVER['REMOTE_HOST'] )[0]:
-								$this->frontHost;
-			$thisHostIP		=	explode ( ':', gethostbyname ( $_SERVER['HTTP_HOST'] ) )[0];
-			
 			// IF CURRENT HOST IS NOT ON LIST
 			if
 			(
 					(
 						!isset ( $_GET [ $this->CallURL_RequestVariable ] ) &&
-						!in_array ( $remote_host, $this->TRUSTEDHOSTS )
+						!in_array ( TASK::GETIPV4( $this->frontHost ), $trustedHostsIP )
 					)
 					||
 					(
@@ -5542,28 +5539,36 @@ DENIEDRESPONSE;
 				http_response_code ( $this->DENIED_RESPONSE_CODE );
 				die ( $this->DENIED_RESPONSE_TEXT );
 			} elseif ( isset ( $_GET [ $this->CallURL_RequestVariable ] ) ) {
-				$trustedIPs = implode ( ',', $allIPAdd );
-				$trustedHosts = implode ( ',', $this->TRUSTEDHOSTS );
+				$scriptPaths	= implode ( ',', $this->SCRIPTPATHS );
+				$trustedHosts	= implode ( ',', $this->TRUSTEDHOSTS );
+				$trustedIPs		= implode ( ',', $allIPAdd );
+				$trustedNames	= implode ( ',', $allNames );
 				echo (
 <<<PHPSCRIPT
 
-	\$GETIPV4 = function ( \$url ) {
+	\$GETIPV4		=	function ( \$url ) {
 		\$ip = \$url == '::1' ? '127.0.0.1' : str_ireplace ( '::ffff:', '', gethostbyname ( \$url ) );
 		return explode ( ':', \$ip )[0];
 	};
-	\$remAddr = \$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
-	\$script_p = explode ( ',', '{$script_p}' );
-	\$thisHostAd =	isset ( \$_SERVER['REMOTE_HOST'] )?
-					explode ( ':', \$_SERVER['REMOTE_HOST'] )[0]:
-					'{$remote_host}';
-	\$thisHostIP =	\$GETIPV4( \$thisHostAd );
+	\$remAddress	=	\$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
+	\$thisHostAd	=	isset ( \$_SERVER['REMOTE_HOST'] )?
+						explode ( ':', \$_SERVER['REMOTE_HOST'] )[0]:
+						'{$this->frontHost}';
+	\$thisHostIP	=	\$GETIPV4( \$thisHostAd );
+	\$nameList		=	[{$trustedNames} ];
+	\$refererName	=	isset ( \$_SERVER['HTTP_REFERER'] ) ?
+						explode ( ':', parse_url ( \$_SERVER['HTTP_REFERER'] )['host'] )[0] : '';
 	
-	\$isPath = in_array ( \$remAddr, \$script_p );
-	\$requestFound = isset ( \$_GET [ '{$this->CallURL_RequestVariable}' ] );
-	\$isMyWebHost = in_array ( \$thisHostAd, explode ( ',', '{$trustedHosts}' ) );
-	\$isTrustedIP = in_array ( \$thisHostIP, explode ( ',', '{$trustedIPs}' ) );
+	\$requestFound	=	isset ( \$_GET [ '{$this->CallURL_RequestVariable}' ] );
+	\$isPath		=	in_array ( \$remAddress, explode ( ',', '{$scriptPaths}' ) );
+	\$isMyWebHost	=	in_array ( \$thisHostAd, explode ( ',', '{$trustedHosts}' ) );
+	\$isTrustedIP	=	in_array ( \$thisHostIP, explode ( ',', '{$trustedIPs}' ) );
+	\$isTrustedReq	=	!isset ( \$_SERVER['HTTP_REFERER'] ) ? true :
+						array_key_exists ( \$refererName, \$nameList ) &&
+						\$nameList [ \$refererName ] == \$remAddress;
 	
 	if	(
+			( \$isTrustedIP && !\$isTrustedReq ) ||
 			// IF REQUEST IS NOT FOUND, AND IP IS A FRONT-END BUT NOT TRUSTED
 			( !\$requestFound && !\$isTrustedIP && \$isPath && !\$isMyWebHost ) ||
 			// IF REQUEST IS FOUND AND IP IS NOT TRUSTED OR IP
@@ -5842,7 +5847,7 @@ UPDATESCRIPT
 	FINAL PUBLIC FUNCTION LISTEN()
 	{
 		// DENY UNTRUSTED HOSTS
-		$this->DENY_HOSTS();
+		$this->BLOCK_HOSTS();
 		
 		// INITIALIZE WORK DIRECTORY
 		$this->INITIALIZE_WORKDIR();
@@ -7728,6 +7733,13 @@ function loader(targetElement,loading_style)
 
 	$(targetElement).stop().fadeOut(100, function()
 	{
+		if ( $(targetElement).attr('data-display') !== undefined ) {
+			if ( $(targetElement).attr('data-display') == '' ) {
+				$(targetElement).css({'display':'grid'});
+			} else {
+				$(targetElement).css({'display':$(targetElement).attr('data-display')});
+			}
+		}
 		$(this).empty().append(imgSrc).fadeIn(100);
 	});
 }
@@ -7806,9 +7818,13 @@ function getpage ( url, target, insert, rungif, anonfn )
 		(	url + insert,
 			function(data)
 			{
-				$(target).fadeOut(100).empty().html(data).fadeIn(100, function()
-				{
-					anonfn(data);
+				$(target).children().fadeOut(100).promise().done(function(){
+					$(target).empty().html(data).promise().done(function(){
+						$(target + ' img').hide().on("load", function(){
+							$(target + ' img').fadeIn(100);
+						});
+						anonfn(data);
+					});
 				});
 			}
 		);
@@ -8236,7 +8252,7 @@ img.imagepreview {
 }
 
 div.overlay {
-	background-color:			black;
+	background-color:			none;
 	position:					fixed;
 	display:					none;
 	width:						100%;
@@ -8246,8 +8262,8 @@ div.overlay {
 	left:						0;
 	right:						0;
 	overflow:					hidden;
-	text-align:					center;
-	vertical-align:				middle;
+	justify-items:				center;
+	align-items:				center;
 }
 
 img.thumbnail,

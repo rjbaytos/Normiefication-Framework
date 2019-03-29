@@ -68,8 +68,14 @@ normiefication\filemanager::$AUTORUN	= false;		// RUN FILE MANAGER IMMEDIATELY W
 $f = new normiefication\filemanager;					// INSTANTIATE FILE MANAGER
 $f->denied_response_parameters ( 503, 'Unavailable' );	// RESPONSE TO DENIED/UNTRUSTED HOSTS
 //$f->allow_full_access_from('192.168.1.2');			// DEVICES THAT WILL HAVE FULL ACCESS TO FILE MANAGER
-//$f->trusted_hosts ( 'example.com' );					// DEVICES THAT WILL HAVE ACCESS TO FILE MANAGER UI
-//$f->script_paths ( 'example.com' );					// DEVICES THAT WILL HAVE ACCESS TO REMOTE SCRIPT
+//$f->trusted_hosts (									// DEVICES THAT WILL HAVE ACCESS TO FILE MANAGER UI
+//	'192.168.1.2',										// YOUR LOCAL MACHINE'S LAN IP
+//	'example.com'										// REMOTE HOST
+//);
+//$f->script_paths (									// DEVICES THAT WILL HAVE ACCESS TO REMOTE SCRIPT
+//	'192.168.1.2',										// 'LOCAL.IP'
+//	['example.com', '185.27.134.188']					// [ 'DOMAIN NAME', 'DOMAIN IP' ]
+//);
 
 $f->DB_alerts_disabled					= false;		// DISABLE DATABASE ALERTS
 $f->no_cache							= false;		// STOP CACHING IMAGES?
