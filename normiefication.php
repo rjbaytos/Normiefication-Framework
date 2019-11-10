@@ -5217,6 +5217,9 @@ DENIEDRESPONSE;
 	// OTHER EXTENSIONS ALLOWED (DO NOT OVERWRITE)
 	PUBLIC $otherExtensions_add		= [];							//
 	
+	// ALTERNATIVE SITES WHEN CURRENT SYSTEM IS OFFLINE
+	PUBLIC $alternative_sites		= [];							//
+	
 	// NEW SCRIPT FOR REMOTE UPDATE
 	PUBLIC $RemoteUpdate_NewScript	= '';							//
 	
@@ -5539,33 +5542,41 @@ DENIEDRESPONSE;
 				http_response_code ( $this->DENIED_RESPONSE_CODE );
 				die ( $this->DENIED_RESPONSE_TEXT );
 			} elseif ( isset ( $_GET [ $this->CallURL_RequestVariable ] ) ) {
-				$scriptPaths	= implode ( ',', $this->SCRIPTPATHS );
 				$trustedHosts	= implode ( ',', $this->TRUSTEDHOSTS );
+				$scriptPaths	= implode ( ',', $this->SCRIPTPATHS );
 				$trustedIPs		= implode ( ',', $allIPAdd );
 				$trustedNames	= implode ( ',', $allNames );
 				echo (
 <<<PHPSCRIPT
 
+	\$URLHOST		=	function ( \$url ) {
+		return explode ( ':', parse_url ( \$url )['host'] )[0];
+	};
 	\$GETIPV4		=	function ( \$url ) {
 		\$ip = \$url == '::1' ? '127.0.0.1' : str_ireplace ( '::ffff:', '', gethostbyname ( \$url ) );
 		return explode ( ':', \$ip )[0];
 	};
-	\$remAddress	=	\$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
-	\$thisHostAd	=	isset ( \$_SERVER['REMOTE_HOST'] )?
-						explode ( ':', \$_SERVER['REMOTE_HOST'] )[0]:
-						'{$this->frontHost}';
+	\$thisHostAd	=	'{$this->frontHost}';
+	//\$remAddress	=	\$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
+	\$remAddress	=	\$thisHostAd == ( \$addrTmp = \$GETIPV4( '{$_SERVER['REMOTE_ADDR']}' ) )?
+						\$addrTmp : \$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
 	\$thisHostIP	=	\$GETIPV4( \$thisHostAd );
 	\$nameList		=	[{$trustedNames} ];
-	\$refererName	=	isset ( \$_SERVER['HTTP_REFERER'] ) ?
-						explode ( ':', parse_url ( \$_SERVER['HTTP_REFERER'] )['host'] )[0] : '';
-	
+	\$refererName	=	isset ( \$_SERVER['HTTP_REFERER'] ) ? \$URLHOST ( \$_SERVER['HTTP_REFERER'] ) : '';
 	\$requestFound	=	isset ( \$_GET [ '{$this->CallURL_RequestVariable}' ] );
-	\$isPath		=	in_array ( \$remAddress, explode ( ',', '{$scriptPaths}' ) );
 	\$isMyWebHost	=	in_array ( \$thisHostAd, explode ( ',', '{$trustedHosts}' ) );
+	\$isPath		=	in_array ( \$remAddress, explode ( ',', '{$scriptPaths}' ) );
 	\$isTrustedIP	=	in_array ( \$thisHostIP, explode ( ',', '{$trustedIPs}' ) );
-	\$isTrustedReq	=	!isset ( \$_SERVER['HTTP_REFERER'] ) ? true :
-						array_key_exists ( \$refererName, \$nameList ) &&
-						\$nameList [ \$refererName ] == \$remAddress;
+	\$isTrustedReq	=	!isset ( \$_SERVER['HTTP_REFERER'] ) ? true : (
+							array_key_exists ( \$refererName, \$nameList ) && (
+								\$nameList [ \$refererName ] == \$remAddress ||
+								gethostbyname ( \$nameList [ \$refererName ] ) == \$remAddress
+							) ||
+							array_key_exists ( \$refIP = gethostbyname ( \$refererName ), \$nameList ) && (
+								\$nameList [ \$refIP ] == \$remAddress ||
+								gethostbyname ( \$nameList [ \$refIP ] ) == \$remAddress
+							)
+						);
 	
 	if	(
 			( \$isTrustedIP && !\$isTrustedReq ) ||
@@ -5815,18 +5826,31 @@ PHPSCRIPT
 				$callURL = $_GET[$this->CallURL_RequestVariable];
 				$ref_host = ( $callURL == '' ) ? TASK::GET_CURRENT_HOST_URL() : $callURL;
 				$callURL = ( $callURL !== '' ) ? '=' . urlencode ( $callURL ) : '';
+				$processURL = rtrim ( str_ireplace ( 'http://', '', $ref_host ), '/' );
+				$ref_host_list = "'" . str_ireplace ( 'https://', '', $processURL ) . "'";
+				foreach ( $this->alternative_sites as $altsite ) {
+					$ref_host_list .= ( $ref_host_list == '' ) ? "'{$altsite}'" : ", '{$altsite}'";
+				}
 				$scrUpdate = TASK::REMOTE_UPDATE_SCRIPT (
 <<<UPDATESCRIPT
 <?php
-	ini_set('default_socket_timeout', 5);
-	\$php = @file_get_contents ( '{$ref_host}?{$this->CallURL_RequestVariable}{$callURL}' );
+	\$hosts = [{$ref_host_list}];
+	\$php = '';
+	\$failed_hosts = '';
+	foreach ( \$hosts as \$host ) {
+		ini_set('default_socket_timeout', 5);
+		\$php = @file_get_contents ( "http://{\$host}/?{$this->CallURL_RequestVariable}{$callURL}" );
+		if ( \$php !== '' && \$php !== false ) break;
+		\$failed_hosts .= ( \$failed_hosts == '' ) ? "[{\$host}]" : ", [{\$host}]";
+	}
+	if ( \$failed_hosts !== '' ) \$failed_hosts .= ' ';
 	if ( \$php === '' ) {
 		\$php_self = htmlspecialchars ( \$_SERVER['PHP_SELF'], ENT_QUOTES, "utf-8" );
 		header("location: {\$php_self}");
 	} elseif ( \$php === false ) {
 		http_response_code ( 503 );
 		echo <<<SERVERDOWN
-<center><b>Failed to Connect</b></center>
+<center><b>{\$failed_hosts}Failed to Connect</b></center>
 <center>The remote HTTP server is currently offline.</center>
 <center>Please try again later.</center>
 SERVERDOWN;
@@ -6663,7 +6687,10 @@ CLASS GUI_ELEMENTS
 
 <script>image_wait( 'img', 600 );</script>
 <style>
-		img.icon, img.thumbnail, div.icon, div.thumbnail {
+		img.icon,
+		img.thumbnail,
+		div.icon,
+		div.thumbnail {
 			{$thumb}:	{$thumbsize}px;
 		}
 
@@ -6671,17 +6698,20 @@ CLASS GUI_ELEMENTS
 		div.filename {
 			font-size:	{$fontsize}px;
 		}
-	
-	@media screen and (max-width: 1000px) {
-		img.icon, img.thumbnail, div.icon, div.thumbnail {
-			{$thumb}:	{$thumbsize_1000}px;
+		
+		@media screen and (max-width: 1000px) {
+			img.icon,
+			img.thumbnail,
+			div.icon,
+			div.thumbnail {
+				{$thumb}:	{$thumbsize_1000}px;
+			}
+			
+			div.container
+			div.filename {
+				font-size:	{$fontsize_1000}px;
+			}
 		}
-
-		div.container
-		div.filename {
-			font-size:	{$fontsize_1000}px;
-		}
-	}
 </style>
 
 SCRIPT
