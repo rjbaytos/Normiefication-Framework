@@ -1283,7 +1283,6 @@ CLASS TASK
 		die (
 <<<'ALERT'
 <script type='text/javascript'>
-	alert('ACCESS DENIED');
 	l = window.location.href;
 	window.location.href = l.split('?')[0];
 </script>
@@ -2573,7 +2572,9 @@ ALERT
 	{
 		$ext = strtolower ( pathinfo ( $url, PATHINFO_EXTENSION ) );
 		if ( !file_exists ( $url ) || $ext != 'lnk' ) return '';
-		return SELF::ARRAY_KEY ( SELF::LINK_INFO ( $url ), 'path', '' );
+		$linkInfo = SELF::LINK_INFO ( $url );
+		return	SELF::ARRAY_KEY ( $linkInfo, 'path', '' ).
+				SELF::ARRAY_KEY ( $linkInfo, 'file', '' );
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -2630,10 +2631,20 @@ ALERT
 			$p_file = $p0 + bread($bin,$p);
 			$path = substr($bin, $p_path, 704);
 			$path = substr($path, 0, strpos($path, "\000"));
+			$path = (string)$path;
 			$file = substr($bin, $p_file, 704);
 			$file = substr($file, 0, strpos($file, "\000"));
+			$file = (string)$file;
+			
+			$extractedPath = explode ( '\\', $file );
+			$lengthOfPath = count ( $extractedPath ) - 1;
+			
+			for ( $pathCtr = 0; $pathCtr < $lengthOfPath; $pathCtr++ ) {
+				$path .= $extractedPath [ $pathCtr ] . '\\';
+			}
+			
+			$res["file"] = $extractedPath [ $lengthOfPath ];
 			$res["path"] = $path;
-			$res["file"] = $file;
 		}
 		
 		return $res;
@@ -2732,7 +2743,7 @@ ALERT
 			string $location	// FILE ADDRESS/LOCATION
 	)
 	{
-		return new MEDIA ( $location );
+		if ( file_exists ( $location ) ) return new MEDIA ( $location );
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -2740,9 +2751,10 @@ ALERT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION ECHO_URL_FILE
 	(
-			string $url,			// FILE ADDRESS/LOCATION
-			bool $no_cache = false	// CACHE FILE?
-	)
+			string $url,				// FILE ADDRESS/LOCATION
+			bool $no_cache = false,		// CACHE FILE?
+			bool $returnError = false	// RETURN ERROR WHEN FILE IS NOT FOUND?
+	): BOOL
 	{
 		// CHECK IF URL IS REMOTE AND ACCESSIBLE
 		$isremote = SELF::URLEXISTS ( $url );
@@ -2795,6 +2807,11 @@ ALERT
 			
 			// ECHO DATA
 			echo $data;
+		}
+		// IF FILE IS NOT FOUND AND THE SYSTEM NEEDS TO RETURN AN ERROR MESSAGE
+		else if ( $returnError )
+		{
+			return true;
 		}
 		
 		// TERMINATE SCRIPT
@@ -3192,6 +3209,9 @@ ALERT
 			string $separator = "\r\n"	// OPTIONAL CHARACTER/STRING TO USE AS SEPARATOR
 	): STRING
 	{
+		// CHECK IF FILE EXISTS
+		if ( !file_exists ( $location ) && !SELF::URLEXISTS ( $location ) ) return '';
+			
 		// EXTRACT DATA FROM LOCATION
 		$data = file_get_contents ( $location );
 		
@@ -4861,7 +4881,8 @@ urlscript
 		$request_scheme = 'http';
 	}
 	$curlopt_referer = $request_scheme . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
-	$curlopt_referer = !empty ( $_SERVER['HTTP_REFERER'] ) ? $_SERVER['HTTP_REFERER'] : $curlopt_referer;
+	$curlopt_referer =	!empty ( $_SERVER['HTTP_REFERER'] ) ?
+						$_SERVER['HTTP_REFERER'] : $curlopt_referer;
 	curl_setopt ( $ch, CURLOPT_URL, $url );
 	curl_setopt ( $ch, CURLOPT_RETURNTRANSFER, 1 );
 	curl_setopt ( $ch, CURLOPT_REFERER, $curlopt_referer );
@@ -4946,6 +4967,12 @@ phpscript
 	$file = fopen ( __DIR__ . DIRECTORY_SEPARATOR . basename ( $php_self ), 'w' );
 	fwrite ( $file, $newPHP );
 	fclose ( $file );
+	echo <<<updateAlert
+<script>
+	alert('Page updated.');
+	window.location.replace('/');
+</script>
+updateAlert;
 
 updateScript;
 	}
@@ -5167,6 +5194,15 @@ CLASS FILEMANAGER
 	<center>Unrecognized host.</center>
 DENIEDRESPONSE;
 	
+	// TITLE THAT CONTRASTS MAIN SERVER ERRORS FROM CLONE SERVERS
+	PUBLIC $SERVER_TITLE			= '';							//
+	
+	// HOME FOLDER URL
+	PUBLIC $HOMEURL					= '';							//
+	
+	// RUN IN DEBUG MODE
+	PUBLIC $DEBUG					= false;						//
+	
 	// RUN THE LISTENER AT CONSTRUCT
 	PUBLIC STATIC $AUTORUN			= false;						//
 	
@@ -5191,8 +5227,11 @@ DENIEDRESPONSE;
 	// FRONT-END/PUBLIC FACING HOST
 	PUBLIC $frontHost				= 'localhost';					//
 	
-	// DIRECTORY THAT SERVES AS YOUR 'HOME', PUBLIC FACING DIRECTORY
+	// PUBLIC DIRECTORY THAT SERVES AS YOUR 'HOME' FOR ALL HOSTS
 	PUBLIC $workingDirectory		= '';							//
+	
+	// PUBLIC DIRECTORY THAT SERVES AS YOUR 'HOME' FOR SPECIFIC HOSTS
+	PUBLIC $workingDirectories		= [];							//
 	
 	// AJAX TARGET ELEMENT
 	PUBLIC $AJAXElement				= 'div.ajax';					// i.e. div.divClass#divID
@@ -5210,7 +5249,6 @@ DENIEDRESPONSE;
 											'mpg',					// video
 											'flv',					// video
 											'wmv',					// video
-											'lnk',					// windows shortcut
 											'torrent'				// torrent file
 									  ];
 	
@@ -5219,6 +5257,9 @@ DENIEDRESPONSE;
 	
 	// ALTERNATIVE SITES WHEN CURRENT SYSTEM IS OFFLINE
 	PUBLIC $alternative_sites		= [];							//
+	
+	// ERROR HTML WHEN ALL SYSTEMS ARE OFFLINE
+	PUBLIC $all_offline_error_HTML	= '';							//
 	
 	// NEW SCRIPT FOR REMOTE UPDATE
 	PUBLIC $RemoteUpdate_NewScript	= '';							//
@@ -5384,6 +5425,7 @@ DENIEDRESPONSE;
 	PUBLIC $show_home_dir						= true;
 	PUBLIC $default_video_controls				= false;
 	PUBLIC $show_audio_controls					= true;
+	PUBLIC $createHTML_immediately				= false;
 	
 	//////////////////////////////////////////////////////////////////
 	// OUTPUT HTML STRING
@@ -5490,7 +5532,7 @@ DENIEDRESPONSE;
 		) {
 			if ( !in_array ( TASK::GETIPV4( $_SERVER['REMOTE_ADDR'] ), $this->SCRIPTPATHS ) ) {
 				http_response_code ( $this->DENIED_RESPONSE_CODE );
-				die ( $this->DENIED_RESPONSE_TEXT );
+				die ( $this->SERVER_TITLE . $this->DENIED_RESPONSE_TEXT );
 			}
 		}
 		
@@ -5509,7 +5551,7 @@ DENIEDRESPONSE;
 			if ( is_string ( $hname ) ) {
 				$allNames[$hname] = " '{$hname}' => '{$ip_stripped}'";
 			} else {
-				$allNames[$ip_stripped] = " '{$ip_stripped}' => '{$ip_stripped}'";
+				$allNames[$arg] = " '{$arg}' => '{$ip_stripped}'";
 			}
 		}
 		
@@ -5521,31 +5563,79 @@ DENIEDRESPONSE;
 			if ( is_string ( $hname ) ) {
 				$allNames[$hname] = " '{$hname}' => '{$ip_stripped}'";
 			} else {
-				$allNames[$ip_stripped] = " '{$ip_stripped}' => '{$ip_stripped}'";
+				$allNames[$arg] = " '{$arg}' => '{$ip_stripped}'";
 			}
 		}
 		
+		$frontHost = explode ( ':', $this->frontHost )[0];
+		$remAddrss = explode ( ':', str_ireplace ( '::ffff:', '', $_SERVER['REMOTE_ADDR'] ) )[0];
 		if ( count ( $this->TRUSTEDHOSTS ) > 0 ) {
 			// IF CURRENT HOST IS NOT ON LIST
 			if
 			(
 					(
 						!isset ( $_GET [ $this->CallURL_RequestVariable ] ) &&
-						!in_array ( TASK::GETIPV4( $this->frontHost ), $trustedHostsIP )
+						(
+							!in_array ( $currIP = TASK::GETIPV4( $this->frontHost ), $trustedHostsIP ) ||
+							(
+								!array_key_exists ( $frontHost, $allNames ) ||
+								(
+									array_key_exists ( $frontHost, $allNames ) &&
+									$currIP == $allNames [ $frontHost ]
+								)
+							)
+						)
 					)
 					||
 					(
 						isset ( $_GET [ $this->CallURL_RequestVariable ] ) &&
-						!in_array ( TASK::GETIPV4( $_SERVER['REMOTE_ADDR'] ), $allIPAdd )
+						(
+							!in_array ( $currIP = TASK::GETIPV4( $_SERVER['REMOTE_ADDR'] ), $allIPAdd ) ||
+							(
+								!array_key_exists ( $remAddrss, $allNames ) ||
+								(
+									array_key_exists ( $remAddrss, $allNames ) &&
+									$currIP == $allNames [ $remAddrss ]
+								)
+							)
+						)
 					)
 			) {
 				http_response_code ( $this->DENIED_RESPONSE_CODE );
-				die ( $this->DENIED_RESPONSE_TEXT );
+				die (
+<<<DEATH
+<html>
+<head>
+<title>{$this->frontHost}</title>
+<script>
+	if ( 'http://{$this->frontHost}/' != ( w = window.location.href.split('?')[0] ) ) {
+		window.location.href = w;
+	} else {
+		alert ( 'Unrecognized host {$this->frontHost}' );
+	}
+</script>
+</head>
+<body>
+{$this->DENIED_RESPONSE_TEXT}
+</body>
+</html>
+DEATH
+				);
 			} elseif ( isset ( $_GET [ $this->CallURL_RequestVariable ] ) ) {
 				$trustedHosts	= implode ( ',', $this->TRUSTEDHOSTS );
 				$scriptPaths	= implode ( ',', $this->SCRIPTPATHS );
 				$trustedIPs		= implode ( ',', $allIPAdd );
 				$trustedNames	= implode ( ',', $allNames );
+				$debugCode		= !$this->DEBUG ? '' :
+<<<DEBUGCODE
+
+		die (
+<<<RESPONSETEXT
+echo "<script>alert('[{\$_SERVER['REMOTE_ADDR']}] FAILED TO CONNECT');</script>";
+RESPONSETEXT
+		);
+		
+DEBUGCODE;
 				echo (
 <<<PHPSCRIPT
 
@@ -5556,25 +5646,37 @@ DENIEDRESPONSE;
 		\$ip = \$url == '::1' ? '127.0.0.1' : str_ireplace ( '::ffff:', '', gethostbyname ( \$url ) );
 		return explode ( ':', \$ip )[0];
 	};
-	\$thisHostAd	=	'{$this->frontHost}';
+	\$thisHostAd	=	'{$frontHost}';
 	//\$remAddress	=	\$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
 	\$remAddress	=	\$thisHostAd == ( \$addrTmp = \$GETIPV4( '{$_SERVER['REMOTE_ADDR']}' ) )?
 						\$addrTmp : \$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
 	\$thisHostIP	=	\$GETIPV4( \$thisHostAd );
-	\$nameList		=	[{$trustedNames} ];
+	\$nameList		=	[{$trustedNames}];
 	\$refererName	=	isset ( \$_SERVER['HTTP_REFERER'] ) ? \$URLHOST ( \$_SERVER['HTTP_REFERER'] ) : '';
+	if (	!array_key_exists ( \$refererName, \$nameList ) &&
+			array_key_exists ( \$rn = explode ( ':', \$_SERVER['HTTP_HOST'] )[0], \$nameList ) ) {
+		\$refererName = \$rn;
+	}
 	\$requestFound	=	isset ( \$_GET [ '{$this->CallURL_RequestVariable}' ] );
 	\$isMyWebHost	=	in_array ( \$thisHostAd, explode ( ',', '{$trustedHosts}' ) );
 	\$isPath		=	in_array ( \$remAddress, explode ( ',', '{$scriptPaths}' ) );
 	\$isTrustedIP	=	in_array ( \$thisHostIP, explode ( ',', '{$trustedIPs}' ) );
-	\$isTrustedReq	=	!isset ( \$_SERVER['HTTP_REFERER'] ) ? true : (
-							array_key_exists ( \$refererName, \$nameList ) && (
-								\$nameList [ \$refererName ] == \$remAddress ||
-								gethostbyname ( \$nameList [ \$refererName ] ) == \$remAddress
-							) ||
-							array_key_exists ( \$refIP = gethostbyname ( \$refererName ), \$nameList ) && (
-								\$nameList [ \$refIP ] == \$remAddress ||
-								gethostbyname ( \$nameList [ \$refIP ] ) == \$remAddress
+	\$isTrustedReq	=	!isset ( \$_SERVER['HTTP_REFERER'] ) ? true : !\$isPath ||
+						(
+							(
+								array_key_exists ( \$refererName, \$nameList ) &&
+								(
+									\$nameList [ \$refererName ] == \$remAddress ||
+									gethostbyname ( \$nameList [ \$refererName ] ) == \$remAddress
+								)
+							)
+							||
+							(
+								array_key_exists ( \$refIP = gethostbyname ( \$refererName ), \$nameList ) &&
+								(
+									\$nameList [ \$refIP ] == \$remAddress ||
+									gethostbyname ( \$nameList [ \$refIP ] ) == \$remAddress
+								)
 							)
 						);
 	
@@ -5587,7 +5689,7 @@ DENIEDRESPONSE;
 			( \$requestFound && ( !\$isTrustedIP || !\$isPath || !\$isMyWebHost ) )
 		)
 	{
-		http_response_code ( {$this->DENIED_RESPONSE_CODE} );
+		{$debugCode}http_response_code ( {$this->DENIED_RESPONSE_CODE} );
 		die(
 <<<RESPONSETEXT
 {$this->DENIED_RESPONSE_TEXT}
@@ -5672,7 +5774,7 @@ PHPSCRIPT
 			$otherExtensions = array_merge ( $this->otherExtensions, $this->otherExtensions_add );
 			
 			// EXTENSIONS APPLICABLE ONLY TO SPECIFIC REQUESTS
-			$specialExts [ $this->WebPage_RequestVariable ] = [ 'php' ];
+			$specialExts [ $this->WebPage_RequestVariable ] = GUI_ELEMENTS::$WEBPAGE_EXTENSIONS;
 			
 			// PREPARE HOST LOCATION INFO
 			$host_IP = gethostbyname ( $host_name );
@@ -5769,6 +5871,9 @@ PHPSCRIPT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION INITIALIZE_WORKDIR()
 	{
+		if ( array_key_exists ( $this->frontHost, $this->workingDirectories ) ) {
+				$this->workingDirectory = $this->workingDirectories[$this->frontHost];
+		}
 		if ( !is_dir( $this->workingDirectory ) ) mkdir ( $this->workingDirectory, 0777, true );
 	}
 	
@@ -5831,6 +5936,12 @@ PHPSCRIPT
 				foreach ( $this->alternative_sites as $altsite ) {
 					$ref_host_list .= ( $ref_host_list == '' ) ? "'{$altsite}'" : ", '{$altsite}'";
 				}
+				$downTimeHTML = $this->all_offline_error_HTML != '' ? $this->all_offline_error_HTML :
+<<<DOWNTIMEHTML
+<center><b>{\$failed_hosts}Failed to Connect</b></center>
+<center>The remote HTTP server is currently offline.</center>
+<center>Please try again later.</center>
+DOWNTIMEHTML;
 				$scrUpdate = TASK::REMOTE_UPDATE_SCRIPT (
 <<<UPDATESCRIPT
 <?php
@@ -5850,9 +5961,7 @@ PHPSCRIPT
 	} elseif ( \$php === false ) {
 		http_response_code ( 503 );
 		echo <<<SERVERDOWN
-<center><b>{\$failed_hosts}Failed to Connect</b></center>
-<center>The remote HTTP server is currently offline.</center>
-<center>Please try again later.</center>
+{$downTimeHTML}
 SERVERDOWN;
 	} else {
 		eval ( \$php );
@@ -5863,6 +5972,23 @@ UPDATESCRIPT
 			}
 			die ( $scrUpdate );
 		}
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> GET HOME URL
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION HOMEURL(): STRING
+	{
+		$limStr =	( $this->file_display_limit > 0 ) ?
+					"&{$this->RangeStart_RequestVariable}=1" .
+					"&{$this->RangeEnd_RequestVariable}={$this->file_display_limit}" :
+					"";
+		$result =	'?' . $this->DataLocation_RequestVariable . '=' .
+					rawurlencode ( TASK::STANDARD_PATH ( realpath ( $this->workingDirectory ) ) ) .
+					"{$limStr}&{$this->Thumbsize_RequestVariable}={$this->thumbsize}" .
+					"&{$this->AJAXFileFetch_RequestVariable}";
+		$this->HOMEURL = $result;
+		return $result;
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -5878,6 +6004,9 @@ UPDATESCRIPT
 		
 		// START CONTROLLING CONNECTIONS
 		$limitedAccess = $this->BLOCK_CONNECTIONS();
+		
+		// PREPARE HOME DIR URL
+		$this->HOMEURL();
 		
 		// CHECK FOR REDIRECTS AND GO
 		$this->GOTOPAGE();
@@ -6017,11 +6146,14 @@ UPDATESCRIPT
 		
 		// ?encode=example.jpg
 		if ( !empty ( $encvar ) ) $task( 'ENCODE', $encvar, function ($result) {
+			if ( $result == '' ) $result = FILES::error404;
 			header ('content-type:text'); echo $result; die;
 		});
 		
 		// ?media=example.mp4
-		if ( !empty ( $strvar ) ) $task( 'STREAM', $strvar );
+		if ( !empty ( $strvar ) ) $task( 'STREAM', $strvar, function () {
+			TASK::RESOURCE ( "error404" );
+		});
 		
 		// ?resource=resourceName
 		if ( !empty ( $rsrcvar ) ) $task( 'RESOURCE', $rsrcvar );
@@ -6030,7 +6162,9 @@ UPDATESCRIPT
 		if ( !TASK::IS_EMPTY ( $zipfrvar, $zipcrvar ) ) $task( 'ZIP', $ziprvar, [$no_cache] );
 		
 		// ?filename=example/example.jpg
-		if ( !empty ( $frvar ) ) $task( 'FILE', $frvar, [$no_cache] );
+		if ( !empty ( $frvar ) ) $task( 'FILE', $frvar, [$no_cache, true], function ( $failed ) {
+			if ( $failed ) TASK::RESOURCE ( "error404" );
+		});
 		
 		// DATABASE QUERY METHOD 1 (CUSTOM QUERY)
 		if
@@ -6166,15 +6300,19 @@ UPDATESCRIPT
 					rawurlencode ( dirname ( rawurldecode ( $_REQUEST[$rwatch] ) ) );
 		$folder = (	!isset ( $_REQUEST[$rlisten] ) ) ? $folder :
 					rawurlencode ( dirname ( rawurldecode ( $_REQUEST[$rlisten] ) ) );
-		$this->files  =	"\r\n" . TASK::STRING_OF("\t", $NumberOfTabs) .
+		$noImmediateFolderRead = !$this->createHTML_immediately && !isset ( $_REQUEST [ $uirvar ] );
+		$this->files  =	$noImmediateFolderRead ? '' :
+						"\r\n" . TASK::STRING_OF("\t", $NumberOfTabs) .
 						"<script>AJAXLink('{$ajaxTargetElement}', 'a.{$aclass}', '&{$uirvar}');</script>";
-		$this->files .= GUI_ELEMENTS::STYLE (
+		$this->files .= $noImmediateFolderRead ? '' :
+						GUI_ELEMENTS::STYLE (
 								$lock,
 								$thumbsize,
 								$size_multiplier,
 								$NumberOfTabs
 						);
-		$this->files .= GUI_ELEMENTS::DISKS (
+		$this->files .= $noImmediateFolderRead ? '' :
+						GUI_ELEMENTS::DISKS (
 								$locrvar,
 								$environment,
 								$NumberOfTabs,
@@ -6187,8 +6325,8 @@ UPDATESCRIPT
 		if ( !$limitedAccess ) TASK::BEYONDROOT();
 		TASK::ROOTDIR ( $HomeDirectory );
 		TASK::WORKDIR ( $HomeDirectory );
-		$this->files .= ( $taskresult = $task
-		(
+		$folderContents = $noImmediateFolderRead ? '' :
+		( $taskresult = $task (
 			'FOLDER', $getVariables, [true],
 			function ( $result ) use
 			(
@@ -6261,9 +6399,21 @@ UPDATESCRIPT
 				foreach ( $result as $fileResult )
 				{
 					$fn = rawurldecode ($fileResult);
+					$shortcutName = '';
 					if ( !is_readable ( $fn ) ) continue;
-					$mimetype = is_file ( $fn ) ? strtolower ( mime_content_type ( $fn ) ) : '';
+					
 					$extension = strtolower ( pathinfo ( $fn, PATHINFO_EXTENSION ) );
+					if ( $extension == 'lnk' && TASK::IS_SHORTCUT ( $fn ) ) {
+						if ( ( $truepath = TASK::READ_SHORTCUT ( $fn ) ) != '' ) {
+							$fnArr = explode ( '/', $fn );
+							$shortcutName = $fnArr [ count ( $fnArr ) - 1 ];
+							$fn = TASK::STANDARD_PATH ( $truepath );
+							$fileResult = rawurlencode ( $fn );
+							$extension = strtolower ( pathinfo ( $fn, PATHINFO_EXTENSION ) );
+						}
+					}
+					
+					$mimetype = is_file ( $fn ) ? strtolower ( mime_content_type ( $fn ) ) : '';
 					if ( is_dir ( $fn ) )
 					{
 						$resstring_dir .= GUI_ELEMENTS::ICON (
@@ -6271,33 +6421,11 @@ UPDATESCRIPT
 											$locrvar,
 											$thumbsize,
 											$environment,
-											'',
+											$shortcutName,
 											0,
 											$NumberOfTabs,
 											$this->anchor_class_name
 										);
-					}
-					else if ( $extension == 'lnk' && TASK::IS_SHORTCUT ( $fn ) )
-					{
-						if ( ( $truepath = TASK::READ_SHORTCUT ( $fn ) ) != '' )
-						{
-							$lnkn = explode ( '.', basename ( $fn ) );
-							$rn = '';
-							for ( $lnkctr = 0; $lnkctr < count ( $lnkn ) - 1; $lnkctr++ )
-							{
-								$rn .= $lnkn [ $lnkctr ];
-							}
-							$resstring_lnk .= GUI_ELEMENTS::ICON (
-											$truepath,
-											$locrvar,
-											$thumbsize,
-											$environment,
-											$rn,
-											0,
-											$NumberOfTabs,
-											$this->anchor_class_name
-										);
-						}
 					}
 					else if ( GUI_ELEMENTS::IS_AUDIO ( $fn, $mimetype, $extension ) )
 					{
@@ -6306,7 +6434,7 @@ UPDATESCRIPT
 											$rlisten,
 											$thumbsize,
 											'',
-											'',
+											$shortcutName,
 											0,
 											$NumberOfTabs,
 											$this->anchor_class_name,
@@ -6320,7 +6448,7 @@ UPDATESCRIPT
 											$rwatch,
 											$thumbsize,
 											'',
-											'',
+											$shortcutName,
 											0,
 											$NumberOfTabs,
 											$this->anchor_class_name,
@@ -6392,7 +6520,7 @@ UPDATESCRIPT
 											$this->WebPage_RequestVariable,
 											$thumbsize,
 											'',
-											'',
+											$shortcutName,
 											0,
 											$NumberOfTabs,
 											'',
@@ -6410,7 +6538,7 @@ UPDATESCRIPT
 											$frvar,
 											$thumbsize,
 											'',
-											'',
+											$shortcutName,
 											0,
 											$NumberOfTabs,
 											$this->anchor_class_name
@@ -6429,6 +6557,33 @@ UPDATESCRIPT
 						$resstring_misc;
 			}
 		)) !== TASK::FAIL ? $taskresult : "";
+		$geturi = function () {
+			$urlstr = '?';
+			foreach ( $_GET as $i => $v ) {
+				$thisval = rawurlencode ($v);
+				$urlstr .= "$i=$thisval&";
+			}
+			return rtrim ( $urlstr, '&' );
+		};
+		$initializationURL = isset ( $_GET [ $locrvar ] ) && file_exists ( $_GET [ $locrvar ] ) ? $geturi() : $this->HOMEURL;
+		$initializationScript = str_replace ( "\r\n", "\r\n" . TASK::STRING_OF ( "\t", $NumberOfTabs ),
+<<<ERROR404
+
+<script type='text/javascript'>
+	loadURL (
+		'{$initializationURL}',
+		'{$this->AJAXElement}',
+		'&{$this->AJAXFileFetch_RequestVariable}',
+		'&{$this->AJAXFileFetch_RequestVariable}'
+	);
+</script>
+ERROR404
+		);
+		
+		$this->files =	count ( $_GET ) > 0 && $folderContents == '' ?
+						$initializationScript : $this->files . $folderContents;
+		$this->files =	count ( $_GET ) == 0 && $this->files == '' ?
+						$initializationScript : $this->files;
 		
 		if ( isset ( $_REQUEST [ $uirvar ] ) )
 		{
@@ -7660,20 +7815,17 @@ SCRIPT
 		$folder = TASK::RENCODE ( 'folder', $tabs );
 		$audio = TASK::RENCODE ( 'audio', $tabs );
 		$video = TASK::RENCODE ( 'video', $tabs );
-		$loading = TASK::RENCODE ( 'loading', $tabs );
-		$loading_mini = TASK::RENCODE ( 'loading_simple', $tabs );
 		header ( "Content-Type: text/javascript" );
 		echo str_replace ( "\r\n", "\r\n" . TASK::STRING_OF ( "\t", $tabs ),
 <<<SCRIPT
 
+var memory = [];
 var zip = $zip;
 var any = $any;
 var drive = $drive;
 var folder = $folder;
 var audio = $audio;
 var video = $video;
-var loading = $loading;
-var loading_mini = $loading_mini;
 
 // WAIT FOR IMAGES TO LOAD
 function image_wait(elements, timer, effect)
@@ -7682,8 +7834,10 @@ function image_wait(elements, timer, effect)
 	if (typeof timer === 'undefined') timer = 3000;
 	if (typeof effect === 'undefined') effect = 'swing';
 	$(function() {
+		$(elements).parent().append("<div class='loadercontainer'><div class='thumbloader'></div></div>");
 		// WAIT FOR IMAGES TO COMPLETE LOADING BEFORE DISPLAYING THEM
 		$(elements).hide().on('load', function() {
+			$(this).parent().children('div.loadercontainer').fadeOut().remove();
 			$(this).css('visibility','visible');
 			$(this).fadeIn(timer, effect);
 		}).each(function() {
@@ -7692,8 +7846,37 @@ function image_wait(elements, timer, effect)
 	});
 }
 
+function loadImage(ImageSrc, TargetElement, ImageProperties)
+{
+	// CREATE IMAGE CLASS
+	var my_image = new Image();
+	
+	// IMAGE PROPERTIES
+	if (typeof ImageProperties === 'undefined') {
+		ImageProperties = '';
+	} else {
+		ImageProperties = ' ' + ImageProperties;
+	}
+	
+	// DISPLAY A LOADING INDICATOR
+	$(TargetElement).empty().append(
+		"<div class='loadercontainer'><div class='thumbloader'></div></div>"
+	);
+	
+	// PREPARE TO INSERT THE IMAGE ONCE LOADED LOADED
+	my_image.onload = function() {
+		$(TargetElement).fadeOut(100).empty().append(
+			"<img src='" + ImageSrc + "'" + ImageProperties + " />"
+		).fadeIn(100);
+	};
+	
+	// LOAD THE IMAGE
+	my_image.src = ImageSrc;
+}
+
 function backgroundImage(imageLocation)
 {
+	if ( typeof imageLocation === 'undefined' ) imageLocation = '';
 	var resizeImg = function( bgRatio )
 	{
 		var w =	window.innerWidth
@@ -7716,6 +7899,9 @@ function backgroundImage(imageLocation)
 	
 	$(function() {
 		var background = new Image();
+		if ( imageLocation == '' ) {
+			imageLocation = $('body').css('background-image').replace('url(','').replace(')','').replace(/"/g, "");
+		}
 		background.src = imageLocation;
 		background.onload = function() {
 			iw = this.width;
@@ -7740,37 +7926,40 @@ function zip_overlay_control(selector)
 }
 
 // DISPLAY LOADING GIF
-function loader(targetElement,loading_style)
+function loader(targetElement)
 {
-	if (typeof targetElement === 'undefined') return;
-
-	if (loading_style == 'large')
-	{
-		imgSrc = "<center><img id = 'loading' class = 'ui' /></center>" +
-				 "<script>$('img#loading.ui').attr('src', loading);</script>";
-	}
-	else if (loading_style == 'mini' || typeof loading_style === 'undefined' )
-	{
-		imgSrc = "<center><img id = 'loading_mini' class = 'ui' /></center>" +
-				 "<script>$('img#loading_mini.ui').attr('src', loading_mini);</script>";
-	}
-	else
-	{
-		imgSrc = "<center>" +
-				 "<img src = '" + loading_style + "' id = 'loading' class = 'ui' />" +
-				 "</center>";
-	}
-
-	$(targetElement).stop().fadeOut(100, function()
-	{
-		if ( $(targetElement).attr('data-display') !== undefined ) {
-			if ( $(targetElement).attr('data-display') == '' ) {
-				$(targetElement).css({'display':'grid'});
-			} else {
-				$(targetElement).css({'display':$(targetElement).attr('data-display')});
-			}
+	$(targetElement).ready(function(){
+		if ( typeof targetElement === 'undefined' ) return;
+		var w =	window.innerWidth
+				|| document.documentElement.clientWidth
+				|| document.body.clientWidth;
+		var h =	window.innerHeight
+				|| document.documentElement.clientHeight
+				|| document.body.clientHeight;
+		var dimensions = 50;
+		var thickness = 10;
+		var divisor = 7;
+		if ( w > h ) {
+			dimensions = h / divisor;
+		} else {
+			dimensions = w / divisor;
 		}
-		$(this).empty().append(imgSrc).fadeIn(100);
+		thickness = dimensions / 5;
+		$(targetElement).stop().fadeOut(100, function()
+		{
+			if ( $(targetElement).attr('data-display') !== undefined ) {
+				if ( $(targetElement).attr('data-display') == '' ) {
+					$(targetElement).css({'display':'grid'});
+				} else {
+					$(targetElement).css({'display':$(targetElement).attr('data-display')});
+				}
+			}
+			$(this).empty().append("<div class='cssloadercontainer'><div class='cssloader'></div></div>");
+			$('div.cssloader').width ( dimensions + 'px' );
+			$('div.cssloader').height ( dimensions + 'px' );
+			$('div.cssloader').css('border-width', thickness + 'px');
+			$(this).fadeIn(100);
+		});
 	});
 }
 
@@ -7781,7 +7970,7 @@ function AJAXOverlayControls ( targetElement )
 	$( document ).click ( function ( event ) { 
 		if ( !$( event.target ).closest( targetElement + ' *' ).length ) {
 			$( targetElement ).fadeOut( 100, function(){
-				$( this ).css( "display", "none" );
+				$( this ).css( "display", "none" ).empty();
 			});
 		}
 	});
@@ -7789,13 +7978,12 @@ function AJAXOverlayControls ( targetElement )
 }
 
 // CREATE AJAX LINKS
-function AJAXLink ( target, source, insert, attrib, rungif )
+function AJAXLink ( target, source, insert, attrib )
 {
 	target = ( typeof target !== 'undefined' ) ? target : 'body';
 	source = ( typeof source !== 'undefined' ) ? source : 'a, area';
 	insert = ( typeof insert !== 'undefined' ) ? insert : '';
 	attrib = ( typeof attrib !== 'undefined' ) ? attrib.toLowerCase() : 'href';
-	rungif = ( typeof rungif !== 'undefined' ) ? rungif.toLowerCase() : 'mini';
 	defaultTarget = target;
 	$(function()
 	{
@@ -7814,9 +8002,9 @@ function AJAXLink ( target, source, insert, attrib, rungif )
 				target = defaultTarget;
 			}
 			
-			getpage(url, target, insert, rungif, function(data){
+			getpage(url, target, insert, function(data){
 				target = defaultTarget;
-				//AJAXLink(target, source, insert, attrib, rungif);
+				//AJAXLink(target, source, insert, attrib);
 			});
 			
 			return false;
@@ -7824,7 +8012,77 @@ function AJAXLink ( target, source, insert, attrib, rungif )
 	});
 }
 
-function getpage ( url, target, insert, rungif, anonfn )
+function implode_recursive ( data, separator, counter )
+{
+	var HTMLContent = '';
+	var separatorIsArray = Array.isArray ( separator );
+	if ( typeof counter != 'number' ) counter = 0;
+	if ( typeof separator === 'undefined' ) separator = '';
+	if ( separator[counter] === undefined && separatorIsArray ) separator = '';
+	var curr_separator = !separatorIsArray ? separator : separator[counter];
+	for ( content in data ) {
+		if ( HTMLContent != '' ) HTMLContent += curr_separator;
+		if ( typeof data[content] == 'string' || typeof data[content] == 'number' ) {
+			HTMLContent += data[content];
+		} else if ( typeof data[content] == 'boolean' ) {
+			if ( data[content] )
+				HTMLContent += 'true';
+			else
+				HTMLContent += 'false';
+		} else if ( data[content] === null ) {
+			HTMLContent += 'null';
+		} else if ( Array.isArray ( data[content] ) ) {
+			var nextKey = separator[ k = counter + 1 ] !== undefined ? k : counter;
+			HTMLContent += implode_recursive ( data[content], separator, nextKey );
+		} else
+			HTMLContent += 'unknown datatype';
+	}
+	return HTMLContent;
+}
+
+function loadList ( url, target, anonfn )
+{
+	if ( typeof url === 'undefined' ) return false;
+	target = ( typeof target !== 'undefined' ) ? target : 'body';
+	anonfn = ( typeof anonfn !== 'undefined' ) ? anonfn : function(data){
+		return implode_recursive ( data, ['<br>', ',', '-'] );
+	};
+	
+	$.get(url, function(result){
+		if ( typeof result == 'string' ) {
+			try {
+				var data = jQuery.parseJSON(result);
+				$(target).empty().html(anonfn(data));
+			} catch(e) {
+				$(target).empty().html(result);
+			}
+		} else {
+			alert('Result is not a string.');
+		}
+	});
+}
+
+function loadURL ( destURL, targetObj, urlAdditions, trimAfter )
+{
+	loader ( targetObj );
+	$(targetObj).promise().done(function(){
+		if ( window.location.search == '' ) {
+			loadList ( destURL, targetObj );
+		} else if ( destURL == window.location.search + urlAdditions ) {
+			window.location.href = window.location.href.split("?")[0];
+			loadList ( destURL, targetObj );
+		} else {
+			loadList ( window.location.search + urlAdditions, targetObj );
+		}
+		var trimmedURL = destURL;
+		if ( typeof trimAfter !== 'undefined' ) {
+			trimmedURL = destURL.replace ( trimAfter, '' );
+		}
+		history.pushState({}, '', trimmedURL);
+	});
+}
+
+function getpage ( url, target, insert, anonfn )
 {
 	if ( typeof url === 'undefined' )
 	{
@@ -7833,28 +8091,49 @@ function getpage ( url, target, insert, rungif, anonfn )
 	
 	target = ( typeof target !== 'undefined' ) ? target : 'body';
 	insert = ( typeof insert !== 'undefined' ) ? insert : '';
-	rungif = ( typeof rungif !== 'undefined' ) ? rungif.toLowerCase() : 'mini';
 	anonfn = ( typeof anonfn !== 'undefined' ) ? anonfn : function(){};
 	
-	loader(target, rungif);
+	loader(target);
 	
 	$(target).promise().done(function()
 	{
-		// MUCH SIMPLER APPROACH:
+		// SIMPLE APPROACH:
 		//$(this).fadeOut(100).load(url + insert).fadeIn(100);
 		
-		// THE FOLLOWING ENABLES MORE FLEXIBILITY IN HANDLING DATA:
 		$.get
 		(	url + insert,
 			function(data)
 			{
-				$(target).children().fadeOut(100).promise().done(function(){
-					$(target).empty().html(data).promise().done(function(){
+				$(target).children().fadeOut(500);
+				$(target).empty().html(data).promise().done(function(){
+					if ( $(target + ' img').length ) {
+						var w =	window.innerWidth
+								|| document.documentElement.clientWidth
+								|| document.body.clientWidth;
+						var h =	window.innerHeight
+								|| document.documentElement.clientHeight
+								|| document.body.clientHeight;
+						var dimensions = 50;
+						var thickness = 10;
+						var divisor = 7;
+						if ( w > h ) {
+							dimensions = h / divisor;
+						} else {
+							dimensions = w / divisor;
+						}
+						thickness = dimensions / 5;
+						$(this).append("<div class='cssloadercontainer'><div class='cssloader'></div></div>");
+						$('div.cssloadercontainer').hide();
+						$('div.cssloader').width ( dimensions + 'px' );
+						$('div.cssloader').height ( dimensions + 'px' );
+						$('div.cssloader').css('border-width', thickness + 'px');
+						$('div.cssloadercontainer').fadeIn(500);
 						$(target + ' img').hide().on("load", function(){
-							$(target + ' img').fadeIn(100);
+							$('div.cssloadercontainer').fadeOut(500).remove();
+							$(target + ' img').fadeIn(500);
 						});
-						anonfn(data);
-					});
+					}
+					anonfn(data);
 				});
 			}
 		);
@@ -7862,12 +8141,11 @@ function getpage ( url, target, insert, rungif, anonfn )
 }
 
 // CREATE AJAX FORMS
-function AJAXForm ( target, form, appendedData, rungif )
+function AJAXForm ( target, form, appendedData )
 {
 	if (typeof target === 'undefined') target = 'body';
 	if (typeof form === 'undefined') form = 'form';
 	if (typeof appendedData === 'undefined') appendedData = '';
-	rungif = ( typeof rungif !== 'undefined' ) ? rungif.toLowerCase() : 'mini';
 	
 	$(function()
 	{
@@ -7877,7 +8155,7 @@ function AJAXForm ( target, form, appendedData, rungif )
 			event.preventDefault();
 			
 			//DISPLAY LOADER
-			loader(target, rungif);
+			loader(target);
 			
 			//SEND DATA
 			$(target).promise().done(function()
@@ -8282,7 +8560,7 @@ img.imagepreview {
 }
 
 div.overlay {
-	background-color:			none;
+	background-color:			#101010;
 	position:					fixed;
 	display:					none;
 	width:						100%;
@@ -8766,6 +9044,87 @@ input[type=range]:focus::-ms-fill-lower {
 
 input[type=range]:focus::-ms-fill-upper {
 	background:					#3A88CC;
+}
+
+div.loadercontainer {
+	position:					absolute;
+	top:						10px;
+	bottom:						10px;
+	left:						10px;
+	right:						10px;
+}
+
+div.thumbloader {
+	position:					relative;
+	color:						white;
+	width:						15px;
+	height:						15px;
+	margin-top:					auto;
+	margin-right:				auto;
+	margin-bottom:				auto;
+	margin-left:				auto;
+	background-color:			#111111;
+	border:						5px solid gray;
+	border-top:					5px solid silver;
+	border-left:				5px solid silver;
+	border-radius:				50%;
+	opacity:					0.95;
+	filter:						alpha(opacity=95);
+	animation:					tick 0.75s linear infinite;
+}
+
+div.cssloadercontainer {
+	position:					relative;
+	top:						0px;
+	bottom:						0px;
+	left:						0px;
+	right:						0px;
+}
+
+div.cssloader {
+	vertical-align:				middle;
+	color:						white;
+	width:						50px;
+	height:						50px;
+	margin-top:					auto;
+	margin-right:				auto;
+	margin-bottom:				auto;
+	margin-left:				auto;
+	background-color:			#111111;
+	border:						10px solid gray;
+	border-top:					10px solid silver;
+	border-left:				10px solid silver;
+	border-radius:				50%;
+	opacity:					0.95;
+	filter:						alpha(opacity=95);
+	animation:					tick 0.75s linear infinite;
+}
+
+@keyframes tick {
+	0% {
+		transform:				rotate(0deg);
+	}
+	50% {
+		transform:				rotate(180deg);
+	}
+	100% {
+		transform:				rotate(360deg);
+	}
+}
+
+@keyframes tickglow {
+	0% {
+		transform:				rotate(0deg);
+		box-shadow:				-1px -1px 1px #E0ECF8; /* top-left border */
+	}
+	50% {
+		transform:				rotate(180deg);
+		box-shadow:				-2px -2px 2px #E0ECF8; /* top-left border */
+	}
+	100% {
+		transform:				rotate(360deg);
+		box-shadow:				-1px -1px 1px #E0ECF8; /* top-left border */
+	}
 }
 
 SCRIPT
@@ -11922,238 +12281,6 @@ Xf9VVVX/TExM/0NDQ/88PDz/NDQ0/yEhIa8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 icon;
-	
-	const loading = <<<'loading'
-data:image/gif;filename=loading.gif;base64,
-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
-78AHL/wJIQAAOwAAAAAAAAAAAA==
-
-loading;
-	
-	const loading_mini = <<<'loading_mini'
-data:image/gif;filename=loading_mini.gif;base64,
-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
-cWskCkApIyEAOw==
-
-loading_mini;
-	
-	const loading_simple = <<<'loading_simple'
-data:image/gif;filename=loading_simple.gif;base64,
-R0lGODlhZQAdAIABAP///////yH/C05FVFNDQVBFMi4wAwEAAAAh+QQFMgABACwAAAAAZQAdAAAClYyP
-qcvtD6OctNqLs968+w+G4kiW5omm6sq27guvwKzMdk0b9q3TPB/Y5V7AnhCxO9x+vhwTECyypExkMgqN
-GrHQ6pY4xCqdR7F4KWxmY+O12Yz+ortpuj08DQPn2+e5/iclg+dVV0Zmx9Vj5JbXCFiUBqemGHg1eHgV
-adg2uWaIxyY6SlpqeoqaqrrK2ur6Chsry1YAACH5BAUyAAEALE8AEQADAAIAAAIChF8AIfkEBTIAAQAs
-UgARAAMAAgAAAgKEXwA7
-
-loading_simple;
 	
 	const search = <<<'search'
 data:image/png;filename=search.png;base64,
