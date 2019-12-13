@@ -5190,8 +5190,178 @@ CLASS FILEMANAGER
 	// RESPONSE MESSAGE IF UNTRUSTED HOST IS DENIED ACCESS
 	PRIVATE $DENIED_RESPONSE_TEXT	=								//
 <<<DENIEDRESPONSE
-	<center><b>Access Denied</b></center>
-	<center>Unrecognized host.</center>
+
+<canvas style="position:absolute;top:0;left:0;" id='snake' />
+<script>
+playSnake(document.getElementById('snake'));
+
+function playSnake(canv, scale, length) {
+	if ( !( canv instanceof HTMLCanvasElement ) ) return;
+	scale = typeof ( scale ) !== 'undefined' ? scale : 25;
+	length = typeof ( length ) !== 'undefined' ? length : 5;
+	window.onload = function() {
+		autoFit ( canv );
+		var obj = {
+			canvas: canv,
+			context: canv.getContext("2d"),
+			scale: scale,
+			initialLength: length,
+			currentLength: length,
+			horizontal: 0,
+			vertical: 0,
+			trajectory: 0,
+			path: [],
+			screen: {
+				x: ( canv.width - canv.width % scale ) / scale,
+				y: ( canv.height - canv.height % scale ) / scale
+			}
+		};
+		obj['snake'] = {
+			x: Math.floor ( Math.random() * obj.screen.x ),	// initial x coordinate of snake
+			y: Math.floor ( Math.random() * obj.screen.y )	// initial y coordinate of snake
+		};
+		obj['block'] = {
+			x: Math.floor ( Math.random() * obj.screen.x ),	// x coordinate of first block
+			y: Math.floor ( Math.random() * obj.screen.y )	// y coordinate of first block
+		};
+		do {
+			obj.block.x = Math.floor ( Math.random() * obj.screen.x );
+			obj.block.y = Math.floor ( Math.random() * obj.screen.y );
+		} while ( obj.block.x == obj.snake.x && obj.block.y == obj.snake.y );
+		document.addEventListener("keydown",function(e){onKeyPress(e,obj);});
+		setInterval(function(){move(obj)},1000/15);
+	}
+}
+
+function autoFit ( element ) {
+	if ( element.getAttribute('width') == "" || element.getAttribute('width') == null ) {
+		if (	element.parentNode === document.body ||
+				element.parentNode.getAttribute('style') == "" ||
+				element.parentNode.getAttribute('style') == null ||
+				element.parentNode.style.width == "" ||
+				element.parentNode.style.width == null
+		) {
+			element.width = window.innerWidth
+						|| document.documentElement.clientWidth
+						|| document.body.clientWidth;
+			if ( element.parentNode !== document.body ) {
+				element.parentNode.width = element.width + 'px';
+			}
+		} else {
+			var parentdim = element.parentNode.style.width;
+			if ( parentdim.includes('%') ) {
+				var windowdim = window.innerWidth
+								|| document.documentElement.clientWidth
+								|| document.body.clientWidth;
+				element.width = ( Number ( parentdim.replace('%','') ) / 100 ) * windowdim;
+			} else {
+				element.width = parentdim.toLowerCase().replace('px','');
+			}
+		}
+	}
+	if ( element.getAttribute('height') == "" || element.getAttribute('height') == null ) {
+		if (	element.parentNode === document.body ||
+				element.parentNode.getAttribute('style') == "" ||
+				element.parentNode.getAttribute('style') == null ||
+				element.parentNode.style.height == "" ||
+				element.parentNode.style.height == null
+		) {
+			element.height = window.innerHeight
+						|| document.documentElement.clientHeight
+						|| document.body.clientHeight;
+			if ( element.parentNode !== document.body ) {
+				element.parentNode.height = element.height + 'px';
+			}
+		} else {
+			var parentdim = element.parentNode.style.height;
+			if ( parentdim.includes('%') ) {
+				var windowdim = window.innerHeight
+								|| document.documentElement.clientHeight
+								|| document.body.clientHeight;
+				element.height = ( Number ( parentdim.replace('%','') ) / 100 ) * windowdim;
+			} else {
+				element.height = parentdim.toLowerCase().replace('px','');
+			}
+		}
+	}
+}
+
+function move ( obj ) {
+	obj.snake.x += obj.horizontal;
+	obj.snake.y += obj.vertical;
+	if ( obj.snake.x < 0 ) {
+		obj.snake.x = obj.screen.x - 1;
+	}
+	if ( obj.snake.x > obj.screen.x - 1 ) {
+		obj.snake.x = 0;
+	}
+	if ( obj.snake.y < 0 ) {
+		obj.snake.y = obj.screen.y - 1;
+	}
+	if( obj.snake.y > obj.screen.y - 1 ) {
+		obj.snake.y = 0;
+	}
+	obj.context.fillStyle = "white";
+	obj.context.fillRect ( 0, 0, obj.canvas.width, obj.canvas.height );
+
+	obj.context.fillStyle = "silver";
+	for(var i=0;i<obj.path.length;i++) {
+		obj.context.fillRect (
+						obj.path[i].x * obj.scale,
+						obj.path[i].y * obj.scale,
+						obj.scale - 2,
+						obj.scale - 2
+		);
+		if( obj.path[i].x == obj.snake.x && obj.path[i].y == obj.snake.y ) {
+			obj.currentLength = obj.initialLength;
+		}
+	}
+	obj.path.push( { x: obj.snake.x, y: obj.snake.y } );
+	while ( obj.path.length > obj.currentLength ) obj.path.shift();
+
+	if( obj.block.x == obj.snake.x && obj.block.y == obj.snake.y ) {
+		obj.currentLength++;
+		obj.block.x = Math.floor ( Math.random() * obj.screen.x );
+		obj.block.y = Math.floor ( Math.random() * obj.screen.y );
+	}
+	obj.context.fillStyle = "gray";
+	obj.context.fillRect ( obj.block.x * obj.scale, obj.block.y * obj.scale, obj.scale - 2, obj.scale - 2);
+}
+
+function onKeyPress ( evt, obj ) {
+	switch(evt.keyCode) {
+		case 37: // left
+			if ( obj.trajectory != 39 ) {
+				obj.horizontal = -1;
+				obj.vertical=0;
+				obj.trajectory=37;
+			}
+			break;
+		case 38: // up
+			if ( obj.trajectory != 40 ) {
+				obj.horizontal = 0;
+				obj.vertical = -1;
+				obj.trajectory = 38;
+			}
+			break;
+		case 39: // right
+			if ( obj.trajectory != 37 ) {
+				obj.horizontal = 1;
+				obj.vertical = 0;
+				obj.trajectory = 39;
+			}
+			break;
+		case 40: // down
+			if ( obj.trajectory != 38 ) {
+				obj.horizontal = 0;
+				obj.vertical = 1;
+				obj.trajectory = 40;
+			}
+			break;
+	}
+}
+</script>
+
 DENIEDRESPONSE;
 	
 	// TITLE THAT CONTRASTS MAIN SERVER ERRORS FROM CLONE SERVERS
@@ -5929,9 +6099,8 @@ PHPSCRIPT
 			
 			if ( trim ( $fcontents ) == '' ) {
 				$callURL = $_GET[$this->CallURL_RequestVariable];
-				$ref_host = ( $callURL == '' ) ? TASK::GET_CURRENT_HOST_URL() : $callURL;
 				$callURL = ( $callURL !== '' ) ? '=' . urlencode ( $callURL ) : '';
-				$processURL = rtrim ( str_ireplace ( 'http://', '', $ref_host ), '/' );
+				$processURL = rtrim ( str_ireplace ( 'http://', '', TASK::GET_CURRENT_HOST_URL() ), '/' );
 				$ref_host_list = "'" . str_ireplace ( 'https://', '', $processURL ) . "'";
 				foreach ( $this->alternative_sites as $altsite ) {
 					$ref_host_list .= ( $ref_host_list == '' ) ? "'{$altsite}'" : ", '{$altsite}'";
@@ -6082,7 +6251,7 @@ UPDATESCRIPT
 		
 		// GET USER DECLARED THUMBSIZE
 		$thumbtemp			= TASK::ARRAY_KEY ( $_REQUEST, $thrvar, $this->thumbsize );
-		$this->thumbsize	= empty ($thumbtemp) ? $this->thumbsize : $thumbtemp;
+		$this->thumbsize	= ( empty ($thumbtemp) || !is_numeric ($thumbtemp) ) ? $this->thumbsize : $thumbtemp;
 		$thumbsize			= $this->thumbsize;
 		
 		// INITIALIZE WHETHER OR NOT TO DISPLAY HTML (FOR FILE OUTPUT)
