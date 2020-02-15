@@ -6876,6 +6876,13 @@ CLASS GUI_ELEMENTS
 											'stm',
 											'xml'
 										];
+	PUBLIC STATIC $SKIPPED_ZIP_C_EXTS =	[	// SKIPPED ZIP CONTENT EXTENSIONS
+											'zip',
+											'rar',
+											'7z',
+											'psd',
+											'sai'
+										];
 	
 	
 	/*///------------------------------------------------------------------------
@@ -7771,6 +7778,9 @@ SCRIPT
 			
 			// GET THE FILE EXTENSION
 			$zfextension = strtolower ( pathinfo ( $file, PATHINFO_EXTENSION ) );
+			
+			// SKIP FILE TYPES
+			if ( in_array ( $zfextension, SELF::$SKIPPED_ZIP_C_EXTS ) ) { continue; }
 			
 			// PREPARE THE ANCHOR PROPERTIES
 			$anchor_props = ( $anchor_props === '' ) ? "target='_blank'" : $anchor_props;
