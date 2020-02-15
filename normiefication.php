@@ -5484,6 +5484,7 @@ DENIEDRESPONSE;
 	//////////////////////////////////////////////////////////////////
 	PUBLIC $CallURL_RequestVariable				= 'remote';
 	PUBLIC $RemoteUpdate_RequestVariable		= 'update';
+	PUBLIC $RemoteErrorScript_RequestVariable	= 'errorscript';
 	PUBLIC $WebPage_RequestVariable				= 'page';
 	PUBLIC $AJAXFileFetch_RequestVariable		= 'fetch';
 	PUBLIC $DataLocation_RequestVariable		= 'dir';
@@ -5589,11 +5590,12 @@ DENIEDRESPONSE;
 	PUBLIC $display_image_properties			= "class='imagepreview'";
 	PUBLIC $thumbnail_adjustment_orientation	= 'auto';
 	PUBLIC $thumbsize							= 100;
+	PUBLIC $thumb_image_scale					= 2;
 	PUBLIC $mobile_size_multiplier				= 3.75;
 	PUBLIC $number_of_tabs						= 3;
 	PUBLIC $file_display_limit					= 0;
 	PUBLIC $show_home_dir						= true;
-	PUBLIC $default_video_controls				= false;
+	PUBLIC $default_video_controls				= true;
 	PUBLIC $show_audio_controls					= true;
 	PUBLIC $createHTML_immediately				= false;
 	
@@ -6059,7 +6061,13 @@ PHPSCRIPT
 			if ( stripos ( $current_url, $current_host ) === FALSE ) {
 				$current_url = $current_host.$current_url;
 			}
-			
+			$urlParams = '';
+			foreach ( $_GET as $g_index => $g_value ) {
+				if ( $g_index != $this->WebPage_RequestVariable ) {
+					$urlParams .= '&' . $g_index . ( ( $g_value == '' ) ? '' : '=' . rawurlencode ( $g_value ) );
+				}
+			}
+			$current_url .= $urlParams != '' ? "?" . ltrim ( $urlParams, '&' ) : '';
 			$ch = curl_init();
 			$request_scheme = TASK::GET_CURRENT_URL_SCHEME();
 			$request_scheme = ( $request_scheme != '' ) ? "{$request_scheme}://" : "";
@@ -6107,16 +6115,35 @@ PHPSCRIPT
 				}
 				$downTimeHTML = $this->all_offline_error_HTML != '' ? $this->all_offline_error_HTML :
 <<<DOWNTIMEHTML
-<center><b>{\$failed_hosts}Failed to Connect</b></center>
-<center>The remote HTTP server is currently offline.</center>
-<center>Please try again later.</center>
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>{\$_SERVER['HTTP_HOST']}</title>
+		<script type='text/javascript' src='?{$this->RemoteErrorScript_RequestVariable}'></script>
+	</head>
+	<body>
+		<canvas style="position:absolute;top:0;left:0;" id='snake'></canvas>
+		<script>
+			alert ( 'The remote HTTP server is currently offline. Please try again later.' );
+			playSnake ( document.getElementById ( 'snake' ) );
+		</script>
+	</body>
+</html>
 DOWNTIMEHTML;
+				$minigame = SCRIPTS::MINIGAMES ( 0, true );
 				$scrUpdate = TASK::REMOTE_UPDATE_SCRIPT (
 <<<UPDATESCRIPT
 <?php
 	\$hosts = [{$ref_host_list}];
 	\$php = '';
 	\$failed_hosts = '';
+	if ( isset ( \$_GET['{$this->RemoteErrorScript_RequestVariable}'] ) ) {
+		header ( 'Content-Type: text/javascript' );
+		die ( <<<'JSCR'
+{$minigame}
+JSCR
+		);
+	}
 	foreach ( \$hosts as \$host ) {
 		ini_set('default_socket_timeout', 5);
 		\$php = @file_get_contents ( "http://{\$host}/?{$this->CallURL_RequestVariable}{$callURL}" );
@@ -6426,8 +6453,8 @@ UPDATESCRIPT
 		}
 		
 		// THUMBNAILS:
-		$task('ZIPTHUMB', "{$zipthfrvar}, {$zipthcrvar}", [$thumbsize, $lock, $no_cache]);
-		$task('URLTHUMB', $urlthvar, [$thumbsize, $lock, $no_cache]);
+		$task('ZIPTHUMB', "{$zipthfrvar}, {$zipthcrvar}", [($thumbsize * $this->thumb_image_scale), $lock, $no_cache]);
+		$task('URLTHUMB', $urlthvar, [($thumbsize * $this->thumb_image_scale), $lock, $no_cache]);
 		
 		$IncludeHomeDirectory = $this->show_home_dir;
 		$videoControl = $this->default_video_controls;
@@ -6700,8 +6727,34 @@ UPDATESCRIPT
 										);
 						}
 					}
+					else if ( $extension == 'url' && strpos ( $filecontents = file_get_contents ( $fn ), 'URL=' ) !== false )
+					{
+						$uniqueID = md5 ( time() . rand ( 0,9999 ) );
+						$linkname = TASK::PX_PER_WORD (
+										str_ireplace ( '.url', '', basename ( $fn ) ),	// FILENAME
+										$thumbsize - 20,								// THUMBNAIL SIZE
+										$thumbsize / 10									// FONT SIZE
+									);
+						$urlarr = explode ( 'URL=', $filecontents );
+						$innerHREF = $urlarr [ count ( $urlarr ) - 1 ];
+						$resstring_web .= str_replace ( "\r\n", "\r\n" . TASK::STRING_OF ( "\t", $NumberOfTabs ),
+<<<SCRIPT
+
+<div class = 'container' >
+	<a target='_blank' href='{$innerHREF}' >
+		<div class='icon'>
+			<img id='any{$uniqueID}' class='icon' />
+		</div>
+		<div class='filename' >{$linkname}</div>
+	</a>
+</div>
+<script>$('img#any{$uniqueID}.icon').attr('src', any);</script>
+SCRIPT
+						)."\r\n".TASK::STRING_OF ( "\t", ( ( $NumberOfTabs > 0 ) ? ( $NumberOfTabs - 1 ) : $NumberOfTabs ) );
+					}
 					else if ( is_file ( $fn ) && in_array ( $extension, $miscExtensions ) )
 					{
+						$miscLinkProps = $extension != 'txt' ? '' : "ext='txt'";
 						$resstring_misc .= GUI_ELEMENTS::ICON (
 											$fileResult,
 											$frvar,
@@ -6710,20 +6763,22 @@ UPDATESCRIPT
 											$shortcutName,
 											0,
 											$NumberOfTabs,
-											$this->anchor_class_name
+											$this->anchor_class_name,
+											$miscLinkProps
 										);
 					}
 				}
-				return	$resstring.
-						$resstring_dir.
-						$resstring_lnk.
-						$resstring_audio.
-						$resstring_video.
-						$resstring_image.
-						$resstring_zip.
-						$resstring_ico.
-						$resstring_web.
-						$resstring_misc;
+				$str_return =	$resstring.
+								$resstring_dir.
+								$resstring_lnk.
+								$resstring_audio.
+								$resstring_video.
+								$resstring_image.
+								$resstring_zip.
+								$resstring_ico.
+								$resstring_web.
+								$resstring_misc;
+				return $str_return == '' ? ' ' : $str_return;
 			}
 		)) !== TASK::FAIL ? $taskresult : "";
 		$geturi = function () {
@@ -6749,8 +6804,9 @@ UPDATESCRIPT
 ERROR404
 		);
 		
+		$appendString = $folderContents == ' ' ? '' : $folderContents;
 		$this->files =	count ( $_GET ) > 0 && $folderContents == '' ?
-						$initializationScript : $this->files . $folderContents;
+						$initializationScript : $this->files . $appendString;
 		$this->files =	count ( $_GET ) == 0 && $this->files == '' ?
 						$initializationScript : $this->files;
 		
@@ -7940,6 +7996,191 @@ SCRIPT
 	}
 	
 	/*///------------------------------------------------------------------------
+			>>> PLAY MINIGAMES
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC STATIC FUNCTION MINIGAMES
+	(
+			int $tabs = 0,					// NUMBER OF TABS / INDENTATION
+			bool $return = false			// RETURN STRING INSTEAD OF ECHO?
+	): STRING
+	{
+		if ( !$return ) header ( "Content-Type: text/javascript" );
+		$scr = str_replace ( "\r\n", "\r\n" . TASK::STRING_OF ( "\t", $tabs ),
+<<<SCRIPT
+
+function playSnake(canv, scale, length) {
+	if ( !( canv instanceof HTMLCanvasElement ) ) return;
+	scale = typeof ( scale ) !== 'undefined' ? scale : 25;
+	length = typeof ( length ) !== 'undefined' ? length : 5;
+	window.onload = function() {
+		autoFit ( canv );
+		var obj = {
+			canvas: canv,
+			context: canv.getContext("2d"),
+			scale: scale,
+			initialLength: length,
+			currentLength: length,
+			horizontal: 0,
+			vertical: 0,
+			trajectory: 0,
+			path: [],
+			screen: {
+				x: ( canv.width - canv.width % scale ) / scale,
+				y: ( canv.height - canv.height % scale ) / scale
+			}
+		};
+		obj['snake'] = {
+			x: Math.floor ( Math.random() * obj.screen.x ),	// initial x coordinate of snake
+			y: Math.floor ( Math.random() * obj.screen.y )	// initial y coordinate of snake
+		};
+		obj['block'] = {
+			x: Math.floor ( Math.random() * obj.screen.x ),	// x coordinate of first block
+			y: Math.floor ( Math.random() * obj.screen.y )	// y coordinate of first block
+		};
+		do {
+			obj.block.x = Math.floor ( Math.random() * obj.screen.x );
+			obj.block.y = Math.floor ( Math.random() * obj.screen.y );
+		} while ( obj.block.x == obj.snake.x && obj.block.y == obj.snake.y );
+		document.addEventListener("keydown",function(e){onKeyPress(e,obj);});
+		setInterval(function(){move(obj)},1000/15);
+	}
+}
+
+function autoFit ( element ) {
+	if ( element.getAttribute('width') == "" || element.getAttribute('width') == null ) {
+		if (	element.parentNode === document.body ||
+				element.parentNode.getAttribute('style') == "" ||
+				element.parentNode.getAttribute('style') == null ||
+				element.parentNode.style.width == "" ||
+				element.parentNode.style.width == null
+		) {
+			element.width = window.innerWidth
+						|| document.documentElement.clientWidth
+						|| document.body.clientWidth;
+			if ( element.parentNode !== document.body ) {
+				element.parentNode.width = element.width + 'px';
+			}
+		} else {
+			var parentdim = element.parentNode.style.width;
+			if ( parentdim.includes('%') ) {
+				var windowdim = window.innerWidth
+								|| document.documentElement.clientWidth
+								|| document.body.clientWidth;
+				element.width = ( Number ( parentdim.replace('%','') ) / 100 ) * windowdim;
+			} else {
+				element.width = parentdim.toLowerCase().replace('px','');
+			}
+		}
+	}
+	if ( element.getAttribute('height') == "" || element.getAttribute('height') == null ) {
+		if (	element.parentNode === document.body ||
+				element.parentNode.getAttribute('style') == "" ||
+				element.parentNode.getAttribute('style') == null ||
+				element.parentNode.style.height == "" ||
+				element.parentNode.style.height == null
+		) {
+			element.height = window.innerHeight
+						|| document.documentElement.clientHeight
+						|| document.body.clientHeight;
+			if ( element.parentNode !== document.body ) {
+				element.parentNode.height = element.height + 'px';
+			}
+		} else {
+			var parentdim = element.parentNode.style.height;
+			if ( parentdim.includes('%') ) {
+				var windowdim = window.innerHeight
+								|| document.documentElement.clientHeight
+								|| document.body.clientHeight;
+				element.height = ( Number ( parentdim.replace('%','') ) / 100 ) * windowdim;
+			} else {
+				element.height = parentdim.toLowerCase().replace('px','');
+			}
+		}
+	}
+}
+
+function move ( obj ) {
+	obj.snake.x += obj.horizontal;
+	obj.snake.y += obj.vertical;
+	if ( obj.snake.x < 0 ) {
+		obj.snake.x = obj.screen.x - 1;
+	}
+	if ( obj.snake.x > obj.screen.x - 1 ) {
+		obj.snake.x = 0;
+	}
+	if ( obj.snake.y < 0 ) {
+		obj.snake.y = obj.screen.y - 1;
+	}
+	if( obj.snake.y > obj.screen.y - 1 ) {
+		obj.snake.y = 0;
+	}
+	obj.context.fillStyle = "white";
+	obj.context.fillRect ( 0, 0, obj.canvas.width, obj.canvas.height );
+	
+	obj.context.fillStyle = "silver";
+	for(var i=0;i<obj.path.length;i++) {
+		obj.context.fillRect (
+						obj.path[i].x * obj.scale,
+						obj.path[i].y * obj.scale,
+						obj.scale - 2,
+						obj.scale - 2
+		);
+		if( obj.path[i].x == obj.snake.x && obj.path[i].y == obj.snake.y ) {
+			obj.currentLength = obj.initialLength;
+		}
+	}
+	obj.path.push( { x: obj.snake.x, y: obj.snake.y } );
+	while ( obj.path.length > obj.currentLength ) obj.path.shift();
+	
+	if( obj.block.x == obj.snake.x && obj.block.y == obj.snake.y ) {
+		obj.currentLength++;
+		obj.block.x = Math.floor ( Math.random() * obj.screen.x );
+		obj.block.y = Math.floor ( Math.random() * obj.screen.y );
+	}
+	obj.context.fillStyle = "gray";
+	obj.context.fillRect ( obj.block.x * obj.scale, obj.block.y * obj.scale, obj.scale - 2, obj.scale - 2);
+}
+
+function onKeyPress ( evt, obj ) {
+	switch(evt.keyCode) {
+		case 37: // left
+			if ( obj.trajectory != 39 ) {
+				obj.horizontal = -1;
+				obj.vertical=0;
+				obj.trajectory=37;
+			}
+			break;
+		case 38: // up
+			if ( obj.trajectory != 40 ) {
+				obj.horizontal = 0;
+				obj.vertical = -1;
+				obj.trajectory = 38;
+			}
+			break;
+		case 39: // right
+			if ( obj.trajectory != 37 ) {
+				obj.horizontal = 1;
+				obj.vertical = 0;
+				obj.trajectory = 39;
+			}
+			break;
+		case 40: // down
+			if ( obj.trajectory != 38 ) {
+				obj.horizontal = 0;
+				obj.vertical = 1;
+				obj.trajectory = 40;
+			}
+			break;
+	}
+}
+
+SCRIPT
+		);
+		if ( !$return ) die ( $scr );
+		return $scr;
+	}
+	
+	/*///------------------------------------------------------------------------
 			>>> WAIT FOR IMAGES TO COMPLETE LOADING BEFORE DISPLAYING THEM
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION WAIT
@@ -8233,8 +8474,9 @@ function loadList ( url, target, anonfn )
 
 function loadURL ( destURL, targetObj, urlAdditions, trimAfter )
 {
-	loader ( targetObj );
-	$(targetObj).promise().done(function(){
+	$(targetObj).stop().promise().done(function(){
+		loader ( targetObj );
+	}).promise().done(function(){
 		if ( window.location.search == '' ) {
 			loadList ( destURL, targetObj );
 		} else if ( destURL == window.location.search + urlAdditions ) {
@@ -8262,10 +8504,9 @@ function getpage ( url, target, insert, anonfn )
 	insert = ( typeof insert !== 'undefined' ) ? insert : '';
 	anonfn = ( typeof anonfn !== 'undefined' ) ? anonfn : function(){};
 	
-	loader(target);
-	
-	$(target).promise().done(function()
-	{
+	$(target).stop().promise().done(function(){
+		loader(target);
+	}).promise().done(function(){
 		// SIMPLE APPROACH:
 		//$(this).fadeOut(100).load(url + insert).fadeIn(100);
 		
@@ -8273,36 +8514,37 @@ function getpage ( url, target, insert, anonfn )
 		(	url + insert,
 			function(data)
 			{
-				$(target).children().fadeOut(500);
-				$(target).empty().html(data).promise().done(function(){
-					if ( $(target + ' img').length ) {
-						var w =	window.innerWidth
-								|| document.documentElement.clientWidth
-								|| document.body.clientWidth;
-						var h =	window.innerHeight
-								|| document.documentElement.clientHeight
-								|| document.body.clientHeight;
-						var dimensions = 50;
-						var thickness = 10;
-						var divisor = 7;
-						if ( w > h ) {
-							dimensions = h / divisor;
-						} else {
-							dimensions = w / divisor;
+				$(target).children().fadeOut(500).promise().done(function(){
+					$(target).empty().html(data).promise().done(function(){
+						if ( $(target + ' img').length ) {
+							var w =	window.innerWidth
+									|| document.documentElement.clientWidth
+									|| document.body.clientWidth;
+							var h =	window.innerHeight
+									|| document.documentElement.clientHeight
+									|| document.body.clientHeight;
+							var dimensions = 50;
+							var thickness = 10;
+							var divisor = 7;
+							if ( w > h ) {
+								dimensions = h / divisor;
+							} else {
+								dimensions = w / divisor;
+							}
+							thickness = dimensions / 5;
+							$(this).append("<div class='cssloadercontainer'><div class='cssloader'></div></div>");
+							$('div.cssloadercontainer').hide();
+							$('div.cssloader').width ( dimensions + 'px' );
+							$('div.cssloader').height ( dimensions + 'px' );
+							$('div.cssloader').css('border-width', thickness + 'px');
+							$('div.cssloadercontainer').fadeIn(500);
+							$(target + ' img').hide().on("load", function(){
+								$('div.cssloadercontainer').fadeOut(500).remove();
+								$(target + ' img').fadeIn(500);
+							});
 						}
-						thickness = dimensions / 5;
-						$(this).append("<div class='cssloadercontainer'><div class='cssloader'></div></div>");
-						$('div.cssloadercontainer').hide();
-						$('div.cssloader').width ( dimensions + 'px' );
-						$('div.cssloader').height ( dimensions + 'px' );
-						$('div.cssloader').css('border-width', thickness + 'px');
-						$('div.cssloadercontainer').fadeIn(500);
-						$(target + ' img').hide().on("load", function(){
-							$('div.cssloadercontainer').fadeOut(500).remove();
-							$(target + ' img').fadeIn(500);
-						});
-					}
-					anonfn(data);
+						anonfn(data);
+					});
 				});
 			}
 		);
@@ -8323,18 +8565,16 @@ function AJAXForm ( target, form, appendedData )
 			//PREVENT DEFAULT FORM SUBMISSION
 			event.preventDefault();
 			
-			//DISPLAY LOADER
-			loader(target);
-			
-			//SEND DATA
-			$(target).promise().done(function()
-			{
+			//DISPLAY LOADER & SEND DATA
+			$(target).promise().done(function(){
+				loader(target);
+			}).promise().done(function(){
 				$.ajax(
 				{
 					type:$(form).attr('method'),
 					url:$(form).attr('action'),
 					data:$(form).serialize() + appendedData,
-					success:function(data){ $(target).empty().html(data); },
+					success:function(data){ $(target).stop().empty().html(data); },
 					error:function(error){ alert('Error! '+error.responseText) }
 				});
 			});
@@ -8729,7 +8969,7 @@ img.imagepreview {
 }
 
 div.overlay {
-	background-color:			#101010;
+	background-color:			rgba(16, 16, 16, 0.8);
 	position:					fixed;
 	display:					none;
 	width:						100%;
@@ -9232,7 +9472,7 @@ div.thumbloader {
 	margin-right:				auto;
 	margin-bottom:				auto;
 	margin-left:				auto;
-	background-color:			#111111;
+	background-color:			rgba(16, 16, 16, 0.8);
 	border:						5px solid gray;
 	border-top:					5px solid silver;
 	border-left:				5px solid silver;
@@ -9259,7 +9499,7 @@ div.cssloader {
 	margin-right:				auto;
 	margin-bottom:				auto;
 	margin-left:				auto;
-	background-color:			#111111;
+	background-color:			rgba(16, 16, 16, 0.2);
 	border:						10px solid gray;
 	border-top:					10px solid silver;
 	border-left:				10px solid silver;
