@@ -4,7 +4,8 @@ A PHP framework for simplifying web development. Normiefication Framework is a C
 Future Development Goals:
 - drag-drop database development
 - drag-drop UI development
-- video coversion and 
+- gifs
+- video coversion and livestream support
 
 Features already available:
 - Server file browser
