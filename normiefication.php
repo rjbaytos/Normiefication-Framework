@@ -1278,13 +1278,20 @@ CLASS TASK
 	/*///------------------------------------------------------------------------
 			>>> STRIP URI AND REDIRECT
 	/*///------------------------------------------------------------------------
-	FINAL PUBLIC STATIC FUNCTION STRIP_AND_REDIRECT()
+	FINAL PUBLIC STATIC FUNCTION STRIP_AND_REDIRECT
+	(
+			string $targetElem = 'div.ajax',	// TARGET HTML ELEMENT
+			string $fetchRequestVar = 'fetch'	// VARIABLE APPENDED TO REQUEST STRINGS
+	)
 	{
 		die (
-<<<'ALERT'
+<<<ALERT
 <script type='text/javascript'>
-	l = window.location.href;
-	window.location.href = l.split('?')[0];
+	if ( typeof loadURL == 'function' ) {
+		loadURL ( window.location.href, '{$targetElem}', '&{$fetchRequestVar}', '&{$fetchRequestVar}' );
+	} else {
+		window.location.href = window.location.href.split('?')[0];
+	}
 </script>
 ALERT
 		);
@@ -4952,14 +4959,34 @@ phpscript;
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC STATIC FUNCTION REMOTE_UPDATE_SCRIPT
 	(
-			string $newPHP = ''	// NEW PHP SCRIPT
+			string $newPHP = '',		// NEW PHP SCRIPT
+			string $newHtaccess = ''	// NEW HTACCESS SCRIPT
 	): STRING
 	{
+		if ( $newHtaccess == '' ) {
+			$newHtaccess = <<<'htaccess'
+# COMPRESS BEFORE SENDING DATA ACROSS SERVER
+<IfModule mod_gzip.c>
+	mod_gzip_on						Yes
+	mod_gzip_dechunk				Yes
+	mod_gzip_item_include file		\.(html?|txt|css|js|php|pl|jpg|jpeg|png|gif|tiff|ico|ttf)$
+	mod_gzip_item_include handler	^cgi-script$
+	mod_gzip_item_include mime		^text/.*
+	mod_gzip_item_include mime		^application/x-javascript.*
+	mod_gzip_item_exclude mime		^image/.*
+	mod_gzip_item_exclude rspheader	^Content-Encoding:.*gzip.*
+</IfModule>
+htaccess;
+		}
 		return	<<<phpscript
 	\$newPHP = <<<'newPHP'
 $newPHP
 
 newPHP;
+	\$newHtaccess = <<<'newHtaccess'
+$newHtaccess
+
+newHtaccess;
 
 phpscript
 		.		<<<'updateScript'
@@ -4967,6 +4994,11 @@ phpscript
 	$file = fopen ( __DIR__ . DIRECTORY_SEPARATOR . basename ( $php_self ), 'w' );
 	fwrite ( $file, $newPHP );
 	fclose ( $file );
+	if ( !file_exists ( '.htaccess' ) ) {
+		$file = fopen ( __DIR__ . DIRECTORY_SEPARATOR . '.htaccess', 'w' );
+		fwrite ( $file, $newHtaccess );
+		fclose ( $file );
+	}
 	echo <<<updateAlert
 <script>
 	alert('Page updated.');
@@ -5170,23 +5202,58 @@ CLASS MEDIA
 
 /*///----------------------------------------------------------------------------
 ---------------------------------------------------------------------------------
-	UI COMPONENTS/TOOLS
+	SECURITY TOOLS
 ---------------------------------------------------------------------------------
 /*///----------------------------------------------------------------------------
-CLASS FILEMANAGER
+CLASS SECURITY
 {
+	PRIVATE $FRONT_END_HOST			=	'localhost';		// HOST ON THE FRONT END
+	PRIVATE $AJAX_ELEMENT			=	'div.ajax';			// TARGET ELEMENT FOR AJAX REQUESTS
+	PRIVATE $AJAX_REQUEST_VARNAME	=	'fetch';			// VARIABLE USED FOR AJAX REQUESTS
+	PRIVATE $PAGE_REQUEST_VARNAME	=	'page';				// VARIABLE USED FOR REQUESTING WEB PAGES
+	PRIVATE $REMOTESCRIPT_VARNAME	=	'remote';			// GET-VARIABLE USED BY THE FRONT END SERVER
+															// TO COMMUNICATE WITH THIS SERVER
+	PRIVATE $WORKDIR				=	'';					// WORK DIRECTORY
+	PRIVATE $WORKDIRS				=	[];					// HOST SPECIFIC WORK DIRECTORIES
+	PRIVATE $MONITORED_REQUEST_VARS	=	[					// REQUEST VARIABLES TO MONITOR
+											'page',				// PAGE REQUEST VARIABLE
+											'dir',				// DIRECTORY REQUEST VARIABLE
+											'full',				// FULL IMAGE FILE REQUEST VARIABLE
+											'filename',			// FILE REQUEST VARIABLE
+											'encode',			// REQUEST VARIABLE FOR ENCODING FILES TO BASE64
+											'media',			// REQUEST VARIABLE FOR PLAYING MEDIA
+											'th',				// REQUEST VARIABLE FOR RESIZED IMAGE
+											'zipfile',			// REQUEST VARIABLE FOR ACCESSING ZIP FILE
+											'zipthfile',		// REQUEST VARIABLE FOR CREATING THUMBNAILS FROM ZIP
+											'watch',			// REQUEST VARIABLE FOR PLAYING VIDEO
+											'listen'			// REQUEST VARIABLE FOR PLAYING AUDIO
+										];
+	PRIVATE $ALLOWED_EXTENSIONS		=	[					// ADDITIONAL EXTENSIONS TO ALLOW
+											'exe',				// executable file
+											'doc',				// word document
+											'docx',				// word document
+											'txt',				// text document
+											'mkv',				// video
+											'avi',				// video
+											'mpg',				// video
+											'flv',				// video
+											'wmv',				// video
+											'torrent'			// torrent file
+										 ];
+	// RUN IN DEBUG MODE
+	PRIVATE $DEBUGMODE				=	false;						//
+	// OPEN FILE MANAGER TO LOCAL AREA NETWORKS AND THE INTERNET
+	PRIVATE $IS_ONLINE				=	false;						//
+	// ERROR MESSAGE THAT CONTRASTS MAIN SERVER FROM FRONT SERVERS
+	PRIVATE $MAIN_SERVER_MESSAGE	=	'';							//
 	// DOMAINS WITH FULL ACCESS TO LOCAL FILES
-	PRIVATE $WHITELIST				= ['localhost', '127.0.0.1'];	//
-	
+	PRIVATE $WHITELIST				=	['localhost', '127.0.0.1'];	//
 	// WEBHOSTS ALLOWED TO ACCESS SITE ( LEAVE BLANK TO ALLOW ALL )
-	PRIVATE $TRUSTEDHOSTS			= [];							//
-	
+	PRIVATE $TRUSTEDHOSTS			=	[];							//
 	// DEVICES THAT WILL HAVE ACCESS TO REMOTE SCRIPT
-	PRIVATE $SCRIPTPATHS			= [];							//
-	
+	PRIVATE $SCRIPTPATHS			=	[];							//
 	// RESPONSE CODE IF UNTRUSTED HOST IS DENIED ACCESS
-	PRIVATE $DENIED_RESPONSE_CODE	= 503;							//
-	
+	PRIVATE $DENIED_RESPONSE_CODE	=	503;						//
 	// RESPONSE MESSAGE IF UNTRUSTED HOST IS DENIED ACCESS
 	PRIVATE $DENIED_RESPONSE_TEXT	=								//
 <<<DENIEDRESPONSE
@@ -5364,14 +5431,719 @@ function onKeyPress ( evt, obj ) {
 
 DENIEDRESPONSE;
 	
-	// TITLE THAT CONTRASTS MAIN SERVER ERRORS FROM CLONE SERVERS
-	PUBLIC $SERVER_TITLE			= '';							//
+	
+	/*///------------------------------------------------------------------------
+	-----------------------------------------------------------------------------
+*		CONSTRUCTORS
+	-----------------------------------------------------------------------------
+	/*///------------------------------------------------------------------------
+	
+	
+	/*///------------------------------------------------------------------------
+			>>> CALL INSTANCE
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION __INVOKE()
+	{
+		return $this->BLOCK_ALL(...func_get_args());
+	}
+	
+	
+	/*///------------------------------------------------------------------------
+	-----------------------------------------------------------------------------
+*		GETTERS
+	-----------------------------------------------------------------------------
+	/*///------------------------------------------------------------------------
+	
+	
+	/*///------------------------------------------------------------------------
+			>>> GET FRONT END HOST
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION GET_FRONT_END_HOST(): STRING
+	{
+		return $this->FRONT_END_HOST;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> GET WORK DIRECTORY
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION GET_WORKDIR(): STRING
+	{
+		return $this->WORKDIR;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> GET DEBUG STATUS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION DEBUGGING(): BOOL
+	{
+		return $this->DEBUGMODE;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> GET ALLOWED USER DEFINED EXTENSIONS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION OTHER_ALLOWED_EXTENSIONS(): ARRAY
+	{
+		return $this->ALLOWED_EXTENSIONS;
+	}
+	
+	
+	/*///------------------------------------------------------------------------
+	-----------------------------------------------------------------------------
+*		SETTERS
+	-----------------------------------------------------------------------------
+	/*///------------------------------------------------------------------------
+	
+	
+	/*///------------------------------------------------------------------------
+			>>> SET FRONT END HOST
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_FRONT_END_HOST
+	(
+			string $hostName	= 'localhost'	// FRONT END HOST
+	)
+	{
+		$this->FRONT_END_HOST = $hostName;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> INITIALIZE FRONT END HOST
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION INITIALIZE_FRONT_END_HOST(): STRING
+	{
+		$this->FRONT_END_HOST = explode ( ':', $_SERVER['HTTP_HOST'] )[0];
+		if ( isset ( $_SERVER['HTTP_REFERER'] ) ) {
+			$this->FRONT_END_HOST = explode ( ':', parse_url ( $_SERVER['HTTP_REFERER'] )['host'] )[0];
+		}
+		$this->FRONT_END_HOST = strtolower ( $this->FRONT_END_HOST );
+		return $this->FRONT_END_HOST;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET WORK DIRECTORIES
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_WORKDIRS
+	(
+			array $directories	= []	// WORKING DIRECTORIES
+	)
+	{
+		$this->WORKDIRS = $directories;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET WORK DIRECTORY
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_WORKDIR
+	(
+			string $directory	= ''	// WORKING DIRECTORY
+	)
+	{
+		$this->WORKDIR = $directory;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> INITIALIZE WORK DIRECTORY
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION INITIALIZE_WORKDIR()
+	{
+		if ( array_key_exists ( $this->FRONT_END_HOST, $this->WORKDIRS ) ) {
+				$this->WORKDIR = $this->WORKDIRS[$this->FRONT_END_HOST];
+		}
+		if ( !is_dir( $this->WORKDIR ) ) mkdir ( $this->WORKDIR, 0777, true );
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET TARGET ELEMENT FOR AJAX REQUESTS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_AJAX_ELEMENT
+	(
+			string $targetElement	= 'div.ajax'	// TARGET ELEMENT FOR AJAX REQUESTS
+	)
+	{
+		$this->AJAX_ELEMENT = $targetElement;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET VARIABLE USED FOR AJAX REQUESTS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_AJAX_REQUEST_VARNAME
+	(
+			string $requestKey	= 'fetch'	// VARIABLE USED FOR AJAX REQUESTS
+	)
+	{
+		$this->AJAX_REQUEST_VARNAME = $requestKey;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET VARIABLE USED FOR REQUESTING WEB PAGES
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_PAGE_REQUEST_VARNAME
+	(
+			string $requestKey	= 'page'	// VARIABLE USED FOR REQUESTING WEB PAGES
+	)
+	{
+		$this->PAGE_REQUEST_VARNAME = $requestKey;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET GET-VARIABLE USED BY THE FRONT END
+				SERVER TO COMMUNICATE WITH THIS SERVER
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_REMOTESCRIPT_VARNAME
+	(
+			string $requestKey	= 'remote'	// GET-VARIABLE USED BY THE FRONT END SERVER
+											// TO COMMUNICATE WITH THIS SERVER 
+	)
+	{
+		$this->REMOTESCRIPT_VARNAME = $requestKey;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> LIST THE REQUEST VARIABLES TO MONITOR
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_MONITORED_REQUEST_VARS()
+	{
+		if ( func_num_args() > 0 )
+			$this->MONITORED_REQUEST_VARS = func_get_args();
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> ADD TO THE LIST OF REQUEST VARIABLES TO MONITOR
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION ADD_MONITORED_REQUEST_VARS()
+	{
+		if ( func_num_args() > 0 )
+			$this->MONITORED_REQUEST_VARS = array_merge ( $this->MONITORED_REQUEST_VARS, func_get_args() );
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> LIST ADDITIONAL EXTENSIONS TO ALLOW
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_ALLOWED_EXTENSIONS()
+	{
+		if ( func_num_args() > 0 )
+			$this->ALLOWED_EXTENSIONS = func_get_args();
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> ADD TO THE LIST OF ADDITIONAL EXTENSIONS TO ALLOW
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION ADD_ALLOWED_EXTENSIONS()
+	{
+		if ( func_num_args() > 0 )
+			$this->ALLOWED_EXTENSIONS = array_merge ( $this->ALLOWED_EXTENSIONS, func_get_args() );
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SWITCH ON DEBUG MODE
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION DEBUG()
+	{
+		$this->DEBUGMODE = true;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> OPEN FILE MANAGER TO LOCAL AREA NETWORKS AND THE INTERNET
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION ONLINE()
+	{
+		$this->IS_ONLINE = true;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET UNIQUE SERVER MESSAGE
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION MAIN_SERVER_MESSAGE
+	(
+			string $serverMessage	= ''	// UNIQUE SERVER MESSAGE
+	)
+	{
+		$this->MAIN_SERVER_MESSAGE = $serverMessage;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> ALLOW CONNECTION TO LOCAL FILES
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION ALLOW_FULL_ACCESS_FROM()
+	{
+		$this->WHITELIST = func_get_args();
+		$this->WHITELIST[] = 'localhost';
+		$this->WHITELIST[] = '127.0.0.1';
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> ALLOW SITE ACCESS TO THESE HOSTS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION TRUSTED_HOSTS()
+	{
+		foreach ( func_get_args() as $arg ) {
+			if ( is_array ( $arg ) ) {
+				if ( count ( $arg ) == 2 && !array_key_exists ( $arg[0], $this->TRUSTEDHOSTS ) ) {
+					$this->TRUSTEDHOSTS [ $arg[0] ] = $arg[1];
+				}
+			}
+			elseif ( !in_array ( $arg, $this->TRUSTEDHOSTS ) ) {
+				$this->TRUSTEDHOSTS[] = $arg;
+			}
+		}
+		foreach ( $this->WHITELIST as $arg ) {
+			if ( !in_array ( $arg, $this->TRUSTEDHOSTS ) ) {
+				$this->TRUSTEDHOSTS[] = $arg;
+			}
+		}
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> ALLOW REMOTE SCRIPT ACCESS TO THESE HOSTS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SCRIPT_PATHS()
+	{
+		foreach ( func_get_args() as $arg ) {
+			if ( is_array ( $arg ) ) {
+				if ( count ( $arg ) == 2 ) {
+					$ip = gethostbyname ( $arg[1] );
+					$ip = explode ( ':', strtolower ( $ip ) )[0];
+					if ( !array_key_exists ( $arg[0], $this->SCRIPTPATHS ) ) {
+						$this->SCRIPTPATHS[ $arg[0] ] = $ip;
+					}
+				}
+			}
+			elseif ( !in_array ( $arg, $this->SCRIPTPATHS ) ) {
+				$this->SCRIPTPATHS[] = $arg;
+			}
+		}
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET DENIED RESPONSE CODE
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_RESPONSE_CODE
+	(
+			int $code		= 503	// RESPONSE CODE
+	)
+	{
+		$this->DENIED_RESPONSE_CODE = $code;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> SET DENIED RESPONSE TEXT
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION SET_RESPONSE_TEXT
+	(
+			string $text	= ''	// RESPONSE TEXT WHEN HOST IS DENIED
+	)
+	{
+		$this->DENIED_RESPONSE_TEXT = $text;
+	}
+	
+	
+	/*///------------------------------------------------------------------------
+	-----------------------------------------------------------------------------
+*		VALIDATION METHODS
+	-----------------------------------------------------------------------------
+	/*///------------------------------------------------------------------------
+	
+	
+	/*///------------------------------------------------------------------------
+			>>> CHECK IF FILE IS ALLOWED
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION FILE_IS_ALLOWED
+	(
+			string $filename,						// LOCATION OF FILE TO BE CHECKED
+			array $otherAllowedExtensions	= [],	// LIST OF OTHER ALLOWED EXTENSIONS
+			bool $blockConnection			= true	// BLOCK CONNECTION TO FILE?
+	): BOOL
+	{
+		$fn = rawurldecode ($filename);
+		if ( is_readable ( $fn ) ) {
+			$mimetype = is_file ( $fn ) ? strtolower ( mime_content_type ( $fn ) ) : '';
+			$extension = strtolower ( pathinfo ( $fn, PATHINFO_EXTENSION ) );
+			if (
+				is_dir ( $fn ) ||
+				( GUI_ELEMENTS::IS_AUDIO ( $fn, $mimetype, $extension ) ) ||
+				( GUI_ELEMENTS::IS_VIDEO ( $fn, $mimetype, $extension ) ) ||
+				( GUI_ELEMENTS::IS_IMAGE ( $fn, $mimetype, $extension ) ) ||
+				( is_file ( $fn ) && $extension == 'zip' ) ||
+				( is_file ( $fn ) && $extension == 'ico' ) ||
+				( is_file ( $fn ) && in_array ( $extension, $otherAllowedExtensions ) )
+			)
+			{
+				return true;
+			}
+		}
+		
+		if ( $blockConnection ) die;
+		
+		return false;
+	}
+	
+	
+	/*///------------------------------------------------------------------------
+	-----------------------------------------------------------------------------
+*		BLOCKING
+	-----------------------------------------------------------------------------
+	/*///------------------------------------------------------------------------
+	
+	
+	/*///------------------------------------------------------------------------
+			>>> DENY UNTRUSTED HOSTS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION BLOCK_HOSTS
+	(
+			string $frontEnd				= 'localhost',	// HOST ON THE FRONT END
+			string $FrontEndRequestVariable	= 'remote'		// GET VARIABLE USED BY THE FRONT END SERVER
+															// TO COMMUNICATE WITH THIS SERVER
+	)
+	{
+		if (	isset ( $_GET [ $FrontEndRequestVariable ] ) &&
+				!empty ( $this->SCRIPTPATHS )
+		) {
+			if ( !in_array ( TASK::GETIPV4( $_SERVER['REMOTE_ADDR'] ), $this->SCRIPTPATHS ) ) {
+				http_response_code ( $this->DENIED_RESPONSE_CODE );
+				die ( $this->MAIN_SERVER_MESSAGE . $this->DENIED_RESPONSE_TEXT );
+			}
+		}
+		
+		$allIPAdd		= [];
+		$allNames		= [];
+		$trustedHostsIP = [];
+		
+		foreach ( $this->TRUSTEDHOSTS as $hname => $arg ) {
+			$ip_stripped = TASK::GETIPV4( $arg );
+			if ( !in_array ( $ip_stripped, $allIPAdd ) ) {
+				$allIPAdd[] = $ip_stripped;
+			}
+			if ( !in_array ( $ip_stripped, $trustedHostsIP ) ) {
+				$trustedHostsIP[] = $ip_stripped;
+			}
+			if ( is_string ( $hname ) ) {
+				$allNames[$hname] = " '{$hname}' => '{$ip_stripped}'";
+			} else {
+				$allNames[$arg] = " '{$arg}' => '{$ip_stripped}'";
+			}
+		}
+		
+		foreach ( $this->SCRIPTPATHS as $hname => $arg ) {
+			$ip_stripped = TASK::GETIPV4( $arg );
+			if ( !in_array ( $ip_stripped, $allIPAdd ) ) {
+				$allIPAdd[] = $ip_stripped;
+			}
+			if ( is_string ( $hname ) ) {
+				$allNames[$hname] = " '{$hname}' => '{$ip_stripped}'";
+			} else {
+				$allNames[$arg] = " '{$arg}' => '{$ip_stripped}'";
+			}
+		}
+		
+		$activeHost	=	explode ( ':', $frontEnd )[0];
+		$remAddrss	=	explode ( ':', str_ireplace ( '::ffff:', '', $_SERVER['REMOTE_ADDR'] ) )[0];
+		if ( count ( $this->TRUSTEDHOSTS ) > 0 ) {
+			// IF CURRENT HOST IS NOT ON LIST
+			if
+			(
+					(
+						!isset ( $_GET [ $FrontEndRequestVariable ] ) &&
+						(
+							!in_array ( $currIP = TASK::GETIPV4( $frontEnd ), $trustedHostsIP ) ||
+							(
+								!array_key_exists ( $activeHost, $allNames ) ||
+								(
+									array_key_exists ( $activeHost, $allNames ) &&
+									$currIP == $allNames [ $activeHost ]
+								)
+							)
+						)
+					)
+					||
+					(
+						isset ( $_GET [ $FrontEndRequestVariable ] ) &&
+						(
+							!in_array ( $currIP = TASK::GETIPV4( $_SERVER['REMOTE_ADDR'] ), $allIPAdd ) ||
+							(
+								!array_key_exists ( $remAddrss, $allNames ) ||
+								(
+									array_key_exists ( $remAddrss, $allNames ) &&
+									$currIP == $allNames [ $remAddrss ]
+								)
+							)
+						)
+					)
+			) {
+				http_response_code ( $this->DENIED_RESPONSE_CODE );
+				die (
+<<<DEATH
+<html>
+<head>
+<title>{$frontEnd}</title>
+<script>
+	myloc = location.protocol + '//{$frontEnd}/';
+	if ( myloc != ( w = window.location.href.split('?')[0] ) ) {
+		window.location.href = w;
+	} else {
+		alert ( 'Unrecognized host ' + myloc );
+	}
+</script>
+</head>
+<body>
+{$this->DENIED_RESPONSE_TEXT}
+</body>
+</html>
+DEATH
+				);
+			} elseif ( isset ( $_GET [ $FrontEndRequestVariable ] ) ) {
+				$trustedHosts	= implode ( ',', $this->TRUSTEDHOSTS );
+				$scriptPaths	= implode ( ',', $this->SCRIPTPATHS );
+				$trustedIPs		= implode ( ',', $allIPAdd );
+				$trustedNames	= implode ( ',', $allNames );
+				$debugCode		= !$this->DEBUGMODE ? '' :
+<<<DEBUGCODE
+
+		die (
+<<<RESPONSETEXT
+echo "<script>alert('[{\$_SERVER['REMOTE_ADDR']}] FAILED TO CONNECT');</script>";
+RESPONSETEXT
+		);
+		
+DEBUGCODE;
+				echo (
+<<<PHPSCRIPT
+
+	\$URLHOST		=	function ( \$url ) {
+		return explode ( ':', parse_url ( \$url )['host'] )[0];
+	};
+	\$GETIPV4		=	function ( \$url ) {
+		\$ip = \$url == '::1' ? '127.0.0.1' : str_ireplace ( '::ffff:', '', gethostbyname ( \$url ) );
+		return explode ( ':', \$ip )[0];
+	};
+	\$thisHostAd	=	'{$activeHost}';
+	//\$remAddress	=	\$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
+	\$remAddress	=	\$thisHostAd == ( \$addrTmp = \$GETIPV4( '{$_SERVER['REMOTE_ADDR']}' ) )?
+						\$addrTmp : \$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
+	\$thisHostIP	=	\$GETIPV4( \$thisHostAd );
+	\$nameList		=	[{$trustedNames}];
+	\$refererName	=	isset ( \$_SERVER['HTTP_REFERER'] ) ? \$URLHOST ( \$_SERVER['HTTP_REFERER'] ) : '';
+	if (	!array_key_exists ( \$refererName, \$nameList ) &&
+			array_key_exists ( \$rn = explode ( ':', \$_SERVER['HTTP_HOST'] )[0], \$nameList ) ) {
+		\$refererName = \$rn;
+	}
+	\$requestFound	=	isset ( \$_GET [ '{$FrontEndRequestVariable}' ] );
+	\$isMyWebHost	=	in_array ( \$thisHostAd, explode ( ',', '{$trustedHosts}' ) );
+	\$isPath		=	in_array ( \$remAddress, explode ( ',', '{$scriptPaths}' ) );
+	\$isTrustedIP	=	in_array ( \$thisHostIP, explode ( ',', '{$trustedIPs}' ) );
+	\$isTrustedReq	=	!isset ( \$_SERVER['HTTP_REFERER'] ) ? true : !\$isPath ||
+						(
+							(
+								array_key_exists ( \$refererName, \$nameList ) &&
+								(
+									\$nameList [ \$refererName ] == \$remAddress ||
+									gethostbyname ( \$nameList [ \$refererName ] ) == \$remAddress
+								)
+							)
+							||
+							(
+								array_key_exists ( \$refIP = gethostbyname ( \$refererName ), \$nameList ) &&
+								(
+									\$nameList [ \$refIP ] == \$remAddress ||
+									gethostbyname ( \$nameList [ \$refIP ] ) == \$remAddress
+								)
+							)
+						);
+	
+	if	(
+			( \$isTrustedIP && !\$isTrustedReq ) ||
+			// IF REQUEST IS NOT FOUND, AND IP IS A FRONT-END BUT NOT TRUSTED
+			( !\$requestFound && !\$isTrustedIP && \$isPath && !\$isMyWebHost ) ||
+			// IF REQUEST IS FOUND AND IP IS NOT TRUSTED OR IP
+			// IS NOT A PATH OR IP IS NOT A RECOGNIZED WEBHOST
+			( \$requestFound && ( !\$isTrustedIP || !\$isPath || !\$isMyWebHost ) )
+		)
+	{
+		{$debugCode}http_response_code ( {$this->DENIED_RESPONSE_CODE} );
+		die(
+<<<RESPONSETEXT
+{$this->DENIED_RESPONSE_TEXT}
+RESPONSETEXT
+		);
+	}
+
+PHPSCRIPT
+				);
+			}
+		}
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> BLOCK CONNECTION TO FILE LOCATIONS
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION BLOCK_CONNECTIONS
+	(
+			string $frontEnd		=	'localhost',		// HOST ON THE FRONT END
+			string $AJAX_element	=	'div.ajax',			// TARGET ELEMENT FOR AJAX REQUESTS
+			string $AJAXFileReqVar	=	'fetch',			// VARIABLE USED FOR AJAX REQUESTS
+			string $WrkDir			=	'',					// WORK DIRECTORY
+			string $WebReqVar		=	'page',				// VARIABLE USED FOR REQUESTING WEB PAGES
+			array $extraExts		=	[],					// ADDITIONAL EXTENSIONS TO ALLOW
+			array $rkeys			=	[					// REQUEST VARIABLES TO MONITOR
+										'page',			// PAGE REQUEST VARIABLE
+										'dir',			// DIRECTORY REQUEST VARIABLE
+										'full',			// FULL IMAGE FILE REQUEST VARIABLE
+										'filename',		// FILE REQUEST VARIABLE
+										'encode',		// REQUEST VARIABLE FOR ENCODING FILES TO BASE64
+										'media',		// REQUEST VARIABLE FOR PLAYING MEDIA
+										'th',			// REQUEST VARIABLE FOR RESIZED IMAGE
+										'zipfile',		// REQUEST VARIABLE FOR ACCESSING ZIP FILE
+										'zipthfile',	// REQUEST VARIABLE FOR CREATING THUMBNAILS FROM ZIP
+										'watch',		// REQUEST VARIABLE FOR PLAYING VIDEO
+										'listen'		// REQUEST VARIABLE FOR PLAYING AUDIO
+										]
+	): BOOL
+	{
+		$def_host		=	str_replace ( '::ffff:', '', $_SERVER['REMOTE_ADDR'] );
+		$host_name		=	isset ( $_SERVER['REMOTE_HOST'] )?
+							explode ( ':', $_SERVER['REMOTE_HOST'] )[0]:
+							$def_host != '::1' ? $def_host : '127.0.0.1';
+		$block			=	true;
+		
+		if (
+				$host_name == gethostbyname ( $frontEnd ) &&
+				!in_array ( $frontEnd, $this->WHITELIST ) &&
+				in_array ( $host_name, $this->WHITELIST  )
+		)
+		{
+			$block = false;
+		}
+		if ( $block && !in_array ( $host_name, $this->WHITELIST ) )
+		{
+			// EXTENSIONS APPLICABLE ONLY TO SPECIFIC REQUESTS
+			$specialExts [ $WebReqVar ] = GUI_ELEMENTS::$WEBPAGE_EXTENSIONS;
+			
+			// PREPARE HOST LOCATION INFO
+			$host_IP = gethostbyname ( $host_name );
+			$host_LAN_IP = $_SERVER['SERVER_ADDR'];
+			$host_local_name = gethostname();
+			$host_local_IP = gethostbyname(getHostname());
+			$hosts = [ $host_name, $host_IP, $host_LAN_IP, $host_local_name, $host_local_IP ];
+			if ( !in_array ( 'localhost', $hosts ) ) $hosts[] = 'localhost';
+			if ( !in_array ( '127.0.0.1', $hosts ) ) $hosts[] = '127.0.0.1';
+			
+			// GET WORKING DIRECTORY
+			$d = realpath ( $WrkDir );
+			$home = ( $d !== '' && file_exists($d) && is_dir($d) ) ? $d : getcwd();
+			$workDir = rtrim ( str_replace ( '\\', '/', $home ), '/' );
+			
+			// ANALYZE REQUESTS
+			foreach ($rkeys as $rkey) if ( isset ( $_REQUEST[$rkey] ) )
+			{
+				$location = str_replace ( '\\', '/', rawurldecode ( $_REQUEST[$rkey] ) );
+				
+				// CREATE TEMPORARY EXTENSION LIST
+				$exList = $extraExts;
+				if ( array_key_exists ( $rkey, $specialExts ) ) {
+					foreach ( $specialExts [ $rkey ] as $newExt ) {
+						$exList[] = $newExt;
+					}
+				}
+				
+				// CHECK IF THE FILE EXTENSIONS ARE VALID FOR THE GIVEN REQUEST
+				// CHECK IF THE CREDENTIALS ARE VALID
+				// CHECK IF THE LOCATION IS VALID FOR THE GIVEN CREDENTIAL
+				if ( !$this->FILE_IS_ALLOWED( $location, $exList, false ) )
+				{
+					TASK::STRIP_AND_REDIRECT($AJAX_element, $AJAXFileReqVar);
+				}
+				$is_url = preg_match ( '#^https?://#', strtolower ( $location ) );
+				
+				// GET CURRENT HOST
+				if ( $is_url ) {
+					$file_IP = explode ( ':', gethostbyname ( parse_url ( $location )[PHP_URL_HOST] ) )[0];
+				} else {
+					$file_IP = '';
+				}
+				
+				// GET REAL LOCATION IF FILE REQUESTED IS A LOCAL FILE
+				if ( !$is_url )
+				{
+					$truelocation = str_replace ( '\\', '/', realpath ( $location ) );
+					$location = ( $truelocation == '' ) ? $location : $truelocation;
+				}
+				
+				// CHECK IF FILE HOST IS AN ALTERNATE HOST FOR THE SERVER
+				$blockedAlternateHost = false;
+				if ( $is_url ) foreach ( $hosts as $host )
+				{
+					if ( stripos ( $location, $host ) !== false )
+					{
+						$blockedAlternateHost = true;
+						break;
+					}
+				}
+				
+				// BLOCK IF
+				if (
+					// ACCESS IS NOT ALLOWED
+					!$this->IS_ONLINE ||
+					
+					// REQUESTED FILE IS LOCAL AND THE LOCATION
+					// IS NOT WITHIN THE WORKING DIRECTORY
+					!$is_url && stripos ( $location, $workDir ) === false ||
+					
+					// REQUESTED FILE IS REMOTE BUT THE SERVER IS AN ALTERNATE SERVER
+					$is_url && $blockedAlternateHost ||
+					
+					// REQUESTED FILE IS REMOTE AND
+					// THE FILE'S IP IS THE SAME AS THE HOST'S IP
+					$is_url && $file_IP === $host_IP
+				)
+				{
+					TASK::STRIP_AND_REDIRECT($AJAX_element, $AJAXFileReqVar);
+				}
+			}
+			
+			// LIMITED ACCESS
+			return true;
+		}
+		
+		// UNLIMITED ACCESS
+		return false;
+	}
+	
+	/*///------------------------------------------------------------------------
+			>>> PERFORM ALL BLOCKING
+	/*///------------------------------------------------------------------------
+	FINAL PUBLIC FUNCTION BLOCK_ALL(): BOOL
+	{
+		// DENY UNTRUSTED HOSTS
+		$this->BLOCK_HOSTS ( $this->FRONT_END_HOST, $this->REMOTESCRIPT_VARNAME );
+		
+		// INITIALIZE WORK DIRECTORY
+		$this->INITIALIZE_WORKDIR();
+		
+		// START CONTROLLING CONNECTIONS
+		return $this->BLOCK_CONNECTIONS(
+			$this->FRONT_END_HOST,
+			$this->AJAX_ELEMENT,
+			$this->AJAX_REQUEST_VARNAME,
+			$this->WORKDIR,
+			$this->PAGE_REQUEST_VARNAME,
+			$this->ALLOWED_EXTENSIONS,
+			$this->MONITORED_REQUEST_VARS
+		);
+	}
+}
+
+
+/*///----------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+	UI COMPONENTS/TOOLS
+---------------------------------------------------------------------------------
+/*///----------------------------------------------------------------------------
+CLASS FILEMANAGER
+{
+	// FILE MANAGER SECURITY
+	PUBLIC $SECURITY;												//
 	
 	// HOME FOLDER URL
 	PUBLIC $HOMEURL					= '';							//
-	
-	// RUN IN DEBUG MODE
-	PUBLIC $DEBUG					= false;						//
 	
 	// RUN THE LISTENER AT CONSTRUCT
 	PUBLIC STATIC $AUTORUN			= false;						//
@@ -5381,9 +6153,6 @@ DENIEDRESPONSE;
 	
 	// CACHE IMAGE?
 	PUBLIC $no_cache				= false;						//
-	
-	// OPEN FILE MANAGER TO THE INTERNET
-	PUBLIC $allowaccess				= false;						//
 	
 	// SHOW FULL URL ( i.e. http://localhost/page.php ) FOR PAGE LINKS
 	PUBLIC $showFullPageURL			= false;						//
@@ -5397,33 +6166,11 @@ DENIEDRESPONSE;
 	// FRONT-END/PUBLIC FACING HOST
 	PUBLIC $frontHost				= 'localhost';					//
 	
-	// PUBLIC DIRECTORY THAT SERVES AS YOUR 'HOME' FOR ALL HOSTS
-	PUBLIC $workingDirectory		= '';							//
-	
-	// PUBLIC DIRECTORY THAT SERVES AS YOUR 'HOME' FOR SPECIFIC HOSTS
-	PUBLIC $workingDirectories		= [];							//
-	
 	// AJAX TARGET ELEMENT
 	PUBLIC $AJAXElement				= 'div.ajax';					// i.e. div.divClass#divID
 	
 	// AJAX TARGET OVERLAY ELEMENT
 	PUBLIC $AJAXOverlayElement		= 'div.overlay';				// i.e. div.divClass#divID
-	
-	// OTHER EXTENSIONS ALLOWED (OVERWRITE)
-	PUBLIC $otherExtensions			= [		'exe',					// executable file
-											'doc',					// word document
-											'docx',					// word document
-											'txt',					// text document
-											'mkv',					// video
-											'avi',					// video
-											'mpg',					// video
-											'flv',					// video
-											'wmv',					// video
-											'torrent'				// torrent file
-									  ];
-	
-	// OTHER EXTENSIONS ALLOWED (DO NOT OVERWRITE)
-	PUBLIC $otherExtensions_add		= [];							//
 	
 	// ALTERNATIVE SITES WHEN CURRENT SYSTEM IS OFFLINE
 	PUBLIC $alternative_sites		= [];							//
@@ -5485,6 +6232,7 @@ DENIEDRESPONSE;
 	PUBLIC $CallURL_RequestVariable				= 'remote';
 	PUBLIC $RemoteUpdate_RequestVariable		= 'update';
 	PUBLIC $RemoteErrorScript_RequestVariable	= 'errorscript';
+	PUBLIC $HostIsAwake_RequestVariable			= 'awake';
 	PUBLIC $WebPage_RequestVariable				= 'page';
 	PUBLIC $AJAXFileFetch_RequestVariable		= 'fetch';
 	PUBLIC $DataLocation_RequestVariable		= 'dir';
@@ -5611,11 +6359,8 @@ DENIEDRESPONSE;
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION __CONSTRUCT ( bool $run = null )
 	{
-		$this->frontHost = explode ( ':', $_SERVER['HTTP_HOST'] )[0];
-		if ( isset ( $_SERVER['HTTP_REFERER'] ) ) {
-			$this->frontHost = explode ( ':', parse_url ( $_SERVER['HTTP_REFERER'] )['host'] )[0];
-		}
-		$this->frontHost = strtolower ( $this->frontHost );
+		$this->SECURITY = new SECURITY();
+		$this->frontHost = $this->SECURITY->INITIALIZE_FRONT_END_HOST();
 		$run = $run === null ? SELF::$AUTORUN : $run;
 		if ( $run ) $this->LISTEN();
 	}
@@ -5629,59 +6374,6 @@ DENIEDRESPONSE;
 	}
 	
 	/*///------------------------------------------------------------------------
-			>>> ALLOW CONNECTION TO LOCAL FILES
-	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION ALLOW_FULL_ACCESS_FROM()
-	{
-		$this->WHITELIST = func_get_args();
-		$this->WHITELIST[] = 'localhost';
-		$this->WHITELIST[] = '127.0.0.1';
-	}
-	
-	/*///------------------------------------------------------------------------
-			>>> ALLOW SITE ACCESS TO THESE HOSTS
-	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION TRUSTED_HOSTS()
-	{
-		foreach ( func_get_args() as $arg ) {
-			if ( is_array ( $arg ) ) {
-				if ( count ( $arg ) == 2 && !array_key_exists ( $arg[0], $this->TRUSTEDHOSTS ) ) {
-					$this->TRUSTEDHOSTS [ $arg[0] ] = $arg[1];
-				}
-			}
-			elseif ( !in_array ( $arg, $this->TRUSTEDHOSTS ) ) {
-				$this->TRUSTEDHOSTS[] = $arg;
-			}
-		}
-		foreach ( $this->WHITELIST as $arg ) {
-			if ( !in_array ( $arg, $this->TRUSTEDHOSTS ) ) {
-				$this->TRUSTEDHOSTS[] = $arg;
-			}
-		}
-	}
-	
-	/*///------------------------------------------------------------------------
-			>>> ALLOW REMOTE SCRIPT ACCESS TO THESE HOSTS
-	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION SCRIPT_PATHS()
-	{
-		foreach ( func_get_args() as $arg ) {
-			if ( is_array ( $arg ) ) {
-				if ( count ( $arg ) == 2 ) {
-					$ip = gethostbyname ( $arg[1] );
-					$ip = explode ( ':', strtolower ( $ip ) )[0];
-					if ( !array_key_exists ( $arg[0], $this->SCRIPTPATHS ) ) {
-						$this->SCRIPTPATHS[ $arg[0] ] = $ip;
-					}
-				}
-			}
-			elseif ( !in_array ( $arg, $this->SCRIPTPATHS ) ) {
-				$this->SCRIPTPATHS[] = $arg;
-			}
-		}
-	}
-	
-	/*///------------------------------------------------------------------------
 			>>> SET DENIED RESPONSE CODE AND TEXT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION DENIED_RESPONSE_PARAMETERS
@@ -5690,363 +6382,8 @@ DENIEDRESPONSE;
 			string $text = ''	// RESPONSE TEXT WHEN HOST IS DENIED
 	)
 	{
-		$this->DENIED_RESPONSE_CODE = $code;
-		$this->DENIED_RESPONSE_TEXT = $text;
-	}
-	
-	/*///------------------------------------------------------------------------
-			>>> DENY UNTRUSTED HOSTS
-	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION BLOCK_HOSTS()
-	{
-		if (	isset ( $_GET[$this->CallURL_RequestVariable] ) &&
-				!empty ( $this->SCRIPTPATHS )
-		) {
-			if ( !in_array ( TASK::GETIPV4( $_SERVER['REMOTE_ADDR'] ), $this->SCRIPTPATHS ) ) {
-				http_response_code ( $this->DENIED_RESPONSE_CODE );
-				die ( $this->SERVER_TITLE . $this->DENIED_RESPONSE_TEXT );
-			}
-		}
-		
-		$allIPAdd		= [];
-		$allNames		= [];
-		$trustedHostsIP = [];
-		
-		foreach ( $this->TRUSTEDHOSTS as $hname => $arg ) {
-			$ip_stripped = TASK::GETIPV4( $arg );
-			if ( !in_array ( $ip_stripped, $allIPAdd ) ) {
-				$allIPAdd[] = $ip_stripped;
-			}
-			if ( !in_array ( $ip_stripped, $trustedHostsIP ) ) {
-				$trustedHostsIP[] = $ip_stripped;
-			}
-			if ( is_string ( $hname ) ) {
-				$allNames[$hname] = " '{$hname}' => '{$ip_stripped}'";
-			} else {
-				$allNames[$arg] = " '{$arg}' => '{$ip_stripped}'";
-			}
-		}
-		
-		foreach ( $this->SCRIPTPATHS as $hname => $arg ) {
-			$ip_stripped = TASK::GETIPV4( $arg );
-			if ( !in_array ( $ip_stripped, $allIPAdd ) ) {
-				$allIPAdd[] = $ip_stripped;
-			}
-			if ( is_string ( $hname ) ) {
-				$allNames[$hname] = " '{$hname}' => '{$ip_stripped}'";
-			} else {
-				$allNames[$arg] = " '{$arg}' => '{$ip_stripped}'";
-			}
-		}
-		
-		$frontHost = explode ( ':', $this->frontHost )[0];
-		$remAddrss = explode ( ':', str_ireplace ( '::ffff:', '', $_SERVER['REMOTE_ADDR'] ) )[0];
-		if ( count ( $this->TRUSTEDHOSTS ) > 0 ) {
-			// IF CURRENT HOST IS NOT ON LIST
-			if
-			(
-					(
-						!isset ( $_GET [ $this->CallURL_RequestVariable ] ) &&
-						(
-							!in_array ( $currIP = TASK::GETIPV4( $this->frontHost ), $trustedHostsIP ) ||
-							(
-								!array_key_exists ( $frontHost, $allNames ) ||
-								(
-									array_key_exists ( $frontHost, $allNames ) &&
-									$currIP == $allNames [ $frontHost ]
-								)
-							)
-						)
-					)
-					||
-					(
-						isset ( $_GET [ $this->CallURL_RequestVariable ] ) &&
-						(
-							!in_array ( $currIP = TASK::GETIPV4( $_SERVER['REMOTE_ADDR'] ), $allIPAdd ) ||
-							(
-								!array_key_exists ( $remAddrss, $allNames ) ||
-								(
-									array_key_exists ( $remAddrss, $allNames ) &&
-									$currIP == $allNames [ $remAddrss ]
-								)
-							)
-						)
-					)
-			) {
-				http_response_code ( $this->DENIED_RESPONSE_CODE );
-				die (
-<<<DEATH
-<html>
-<head>
-<title>{$this->frontHost}</title>
-<script>
-	if ( 'http://{$this->frontHost}/' != ( w = window.location.href.split('?')[0] ) ) {
-		window.location.href = w;
-	} else {
-		alert ( 'Unrecognized host {$this->frontHost}' );
-	}
-</script>
-</head>
-<body>
-{$this->DENIED_RESPONSE_TEXT}
-</body>
-</html>
-DEATH
-				);
-			} elseif ( isset ( $_GET [ $this->CallURL_RequestVariable ] ) ) {
-				$trustedHosts	= implode ( ',', $this->TRUSTEDHOSTS );
-				$scriptPaths	= implode ( ',', $this->SCRIPTPATHS );
-				$trustedIPs		= implode ( ',', $allIPAdd );
-				$trustedNames	= implode ( ',', $allNames );
-				$debugCode		= !$this->DEBUG ? '' :
-<<<DEBUGCODE
-
-		die (
-<<<RESPONSETEXT
-echo "<script>alert('[{\$_SERVER['REMOTE_ADDR']}] FAILED TO CONNECT');</script>";
-RESPONSETEXT
-		);
-		
-DEBUGCODE;
-				echo (
-<<<PHPSCRIPT
-
-	\$URLHOST		=	function ( \$url ) {
-		return explode ( ':', parse_url ( \$url )['host'] )[0];
-	};
-	\$GETIPV4		=	function ( \$url ) {
-		\$ip = \$url == '::1' ? '127.0.0.1' : str_ireplace ( '::ffff:', '', gethostbyname ( \$url ) );
-		return explode ( ':', \$ip )[0];
-	};
-	\$thisHostAd	=	'{$frontHost}';
-	//\$remAddress	=	\$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
-	\$remAddress	=	\$thisHostAd == ( \$addrTmp = \$GETIPV4( '{$_SERVER['REMOTE_ADDR']}' ) )?
-						\$addrTmp : \$GETIPV4( \$_SERVER['REMOTE_ADDR'] );
-	\$thisHostIP	=	\$GETIPV4( \$thisHostAd );
-	\$nameList		=	[{$trustedNames}];
-	\$refererName	=	isset ( \$_SERVER['HTTP_REFERER'] ) ? \$URLHOST ( \$_SERVER['HTTP_REFERER'] ) : '';
-	if (	!array_key_exists ( \$refererName, \$nameList ) &&
-			array_key_exists ( \$rn = explode ( ':', \$_SERVER['HTTP_HOST'] )[0], \$nameList ) ) {
-		\$refererName = \$rn;
-	}
-	\$requestFound	=	isset ( \$_GET [ '{$this->CallURL_RequestVariable}' ] );
-	\$isMyWebHost	=	in_array ( \$thisHostAd, explode ( ',', '{$trustedHosts}' ) );
-	\$isPath		=	in_array ( \$remAddress, explode ( ',', '{$scriptPaths}' ) );
-	\$isTrustedIP	=	in_array ( \$thisHostIP, explode ( ',', '{$trustedIPs}' ) );
-	\$isTrustedReq	=	!isset ( \$_SERVER['HTTP_REFERER'] ) ? true : !\$isPath ||
-						(
-							(
-								array_key_exists ( \$refererName, \$nameList ) &&
-								(
-									\$nameList [ \$refererName ] == \$remAddress ||
-									gethostbyname ( \$nameList [ \$refererName ] ) == \$remAddress
-								)
-							)
-							||
-							(
-								array_key_exists ( \$refIP = gethostbyname ( \$refererName ), \$nameList ) &&
-								(
-									\$nameList [ \$refIP ] == \$remAddress ||
-									gethostbyname ( \$nameList [ \$refIP ] ) == \$remAddress
-								)
-							)
-						);
-	
-	if	(
-			( \$isTrustedIP && !\$isTrustedReq ) ||
-			// IF REQUEST IS NOT FOUND, AND IP IS A FRONT-END BUT NOT TRUSTED
-			( !\$requestFound && !\$isTrustedIP && \$isPath && !\$isMyWebHost ) ||
-			// IF REQUEST IS FOUND AND IP IS NOT TRUSTED OR IP
-			// IS NOT A PATH OR IP IS NOT A RECOGNIZED WEBHOST
-			( \$requestFound && ( !\$isTrustedIP || !\$isPath || !\$isMyWebHost ) )
-		)
-	{
-		{$debugCode}http_response_code ( {$this->DENIED_RESPONSE_CODE} );
-		die(
-<<<RESPONSETEXT
-{$this->DENIED_RESPONSE_TEXT}
-RESPONSETEXT
-		);
-	}
-
-PHPSCRIPT
-				);
-			}
-		}
-	}
-	
-	/*///------------------------------------------------------------------------
-			>>> CHECK IF FILE IS ALLOWED
-	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION FILE_IS_ALLOWED
-	(
-			string $filename,					// LOCATION OF FILE TO BE CHECKED
-			array $otherAllowedExtensions = [],	// LIST OF OTHER ALLOWED EXTENSIONS
-			bool $blockConnection = true		// BLOCK CONNECTION TO FILE?
-	): BOOL
-	{
-		$fn = rawurldecode ($filename);
-		if ( is_readable ( $fn ) ) {
-			$mimetype = is_file ( $fn ) ? strtolower ( mime_content_type ( $fn ) ) : '';
-			$extension = strtolower ( pathinfo ( $fn, PATHINFO_EXTENSION ) );
-			if (
-				is_dir ( $fn ) ||
-				( GUI_ELEMENTS::IS_AUDIO ( $fn, $mimetype, $extension ) ) ||
-				( GUI_ELEMENTS::IS_VIDEO ( $fn, $mimetype, $extension ) ) ||
-				( GUI_ELEMENTS::IS_IMAGE ( $fn, $mimetype, $extension ) ) ||
-				( is_file ( $fn ) && $extension == 'zip' ) ||
-				( is_file ( $fn ) && $extension == 'ico' ) ||
-				( is_file ( $fn ) && in_array ( $extension, $otherAllowedExtensions ) )
-			)
-			{
-				return true;
-			}
-		}
-		
-		if ( $blockConnection ) die;
-		
-		return false;
-	}
-	
-	/*///------------------------------------------------------------------------
-			>>> BLOCK CONNECTION TO FILE LOCATIONS
-	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION BLOCK_CONNECTIONS(): BOOL
-	{
-		$def_host	=	str_replace ( '::ffff:', '', $_SERVER['REMOTE_ADDR'] );
-		$host_name	=	isset ( $_SERVER['REMOTE_HOST'] )?
-						explode ( ':', $_SERVER['REMOTE_HOST'] )[0]:
-						$def_host != '::1' ? $def_host : '127.0.0.1';
-		$block		=	true;
-		
-		if (
-				$host_name == gethostbyname ( $this->frontHost ) &&
-				!in_array ( $this->frontHost, $this->WHITELIST ) &&
-				in_array ( $host_name, $this->WHITELIST  )
-		)
-		{
-			$block = false;
-		}
-		if ( $block && !in_array ( $host_name, $this->WHITELIST ) )
-		{
-			// REQUEST KEYS TO BE MONITORED
-			$rkeys =	[
-							$this->WebPage_RequestVariable,
-							$this->DataLocation_RequestVariable,
-							$this->FullImage_RequestVariable,
-							$this->File_RequestVariable,
-							$this->Encode_RequestVariable,
-							$this->Stream_RequestVariable,
-							$this->URLThumb_RequestVariable,
-							$this->ZipFile_RequestVariable,
-							$this->ZipThumbSource_RequestVariable,
-							$this->WatchMedia_RequestVariable,
-							$this->ListenToMedia_RequestVariable
-						];
-			$otherExtensions = array_merge ( $this->otherExtensions, $this->otherExtensions_add );
-			
-			// EXTENSIONS APPLICABLE ONLY TO SPECIFIC REQUESTS
-			$specialExts [ $this->WebPage_RequestVariable ] = GUI_ELEMENTS::$WEBPAGE_EXTENSIONS;
-			
-			// PREPARE HOST LOCATION INFO
-			$host_IP = gethostbyname ( $host_name );
-			$host_LAN_IP = $_SERVER['SERVER_ADDR'];
-			$host_local_name = gethostname();
-			$host_local_IP = gethostbyname(getHostname());
-			$hosts = [ $host_name, $host_IP, $host_LAN_IP, $host_local_name, $host_local_IP ];
-			if ( !in_array ( 'localhost', $hosts ) ) $hosts[] = 'localhost';
-			if ( !in_array ( '127.0.0.1', $hosts ) ) $hosts[] = '127.0.0.1';
-			
-			// GET WORKING DIRECTORY
-			$d = realpath ( $this->workingDirectory );
-			$home = ( $d !== '' && file_exists($d) && is_dir($d) ) ? $d : getcwd();
-			$workDir = rtrim ( str_replace ( '\\', '/', $home ), '/' );
-			
-			// ANALYZE REQUESTS
-			foreach ($rkeys as $rkey) if ( isset ( $_REQUEST[$rkey] ) )
-			{
-				$location = str_replace ( '\\', '/', rawurldecode ( $_REQUEST[$rkey] ) );
-				
-				// CREATE TEMPORARY EXTENSION LIST
-				$exList = $otherExtensions;
-				if ( array_key_exists ( $rkey, $specialExts ) ) {
-					foreach ( $specialExts [ $rkey ] as $newExt ) {
-						$exList[] = $newExt;
-					}
-				}
-				
-				// CHECK IF THE FILE EXTENSIONS ARE VALID FOR THE GIVEN REQUEST
-				// CHECK IF THE CREDENTIALS ARE VALID
-				// CHECK IF THE LOCATION IS VALID FOR THE GIVEN CREDENTIAL
-				if ( !$this->FILE_IS_ALLOWED( $location, $exList, false ) )
-				{
-					TASK::STRIP_AND_REDIRECT();
-				}
-				$is_url = preg_match ( '#^https?://#', strtolower ( $location ) );
-				
-				// GET CURRENT HOST
-				if ( $is_url ) {
-					$file_IP = explode ( ':', gethostbyname ( parse_url ( $location )[PHP_URL_HOST] ) )[0];
-				} else {
-					$file_IP = '';
-				}
-				
-				// GET REAL LOCATION IF FILE REQUESTED IS A LOCAL FILE
-				if ( !$is_url )
-				{
-					$truelocation = str_replace ( '\\', '/', realpath ( $location ) );
-					$location = ( $truelocation == '' ) ? $location : $truelocation;
-				}
-				
-				// CHECK IF FILE HOST IS AN ALTERNATE HOST FOR THE SERVER
-				$blockedAlternateHost = false;
-				if ( $is_url ) foreach ( $hosts as $host )
-				{
-					if ( stripos ( $location, $host ) !== false )
-					{
-						$blockedAlternateHost = true;
-						break;
-					}
-				}
-				
-				// BLOCK IF
-				if (
-					// ACCESS IS NOT ALLOWED
-					!$this->allowaccess ||
-					
-					// REQUESTED FILE IS LOCAL AND THE LOCATION
-					// IS NOT WITHIN THE WORKING DIRECTORY
-					!$is_url && stripos ( $location, $workDir ) === false ||
-					
-					// REQUESTED FILE IS REMOTE BUT THE SERVER IS AN ALTERNATE SERVER
-					$is_url && $blockedAlternateHost ||
-					
-					// REQUESTED FILE IS REMOTE AND
-					// THE FILE'S IP IS THE SAME AS THE HOST'S IP
-					$is_url && $file_IP === $host_IP
-				)
-				{
-					TASK::STRIP_AND_REDIRECT();
-				}
-			}
-			
-			// LIMITED ACCESS
-			return true;
-		}
-		
-		// UNLIMITED ACCESS
-		return false;
-	}
-	
-	/*///------------------------------------------------------------------------
-			>>> INITIALIZE WORK DIRECTORY
-	/*///------------------------------------------------------------------------
-	FINAL PUBLIC FUNCTION INITIALIZE_WORKDIR()
-	{
-		if ( array_key_exists ( $this->frontHost, $this->workingDirectories ) ) {
-				$this->workingDirectory = $this->workingDirectories[$this->frontHost];
-		}
-		if ( !is_dir( $this->workingDirectory ) ) mkdir ( $this->workingDirectory, 0777, true );
+		$this->SECURITY->SET_RESPONSE_CODE($code);
+		$this->SECURITY->SET_RESPONSE_TEXT($text);
 	}
 	
 	/*///------------------------------------------------------------------------
@@ -6054,16 +6391,19 @@ PHPSCRIPT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION GOTOPAGE()
 	{
-		if ( isset ( $_GET[$this->WebPage_RequestVariable] ) ) {
+		$indexVar = $this->WebPage_RequestVariable;
+		if ( isset ( $_GET [ $indexVar ] ) ) {
 			// GET THE CURRENT HOST URL
-			$current_host = TASK::GET_CURRENT_HOST_URL();
-			$current_url = $_GET[$this->WebPage_RequestVariable];
+			$stdPorts = [ 80, 443 ];
+			$serverPort = !in_array ( $srvpt = $_SERVER['SERVER_PORT'], $stdPorts ) ? ":{$srvpt}" : '';
+			$current_host = 'localhost' . $serverPort . '/';
+			$current_url = $_GET[ $indexVar ];
 			if ( stripos ( $current_url, $current_host ) === FALSE ) {
 				$current_url = $current_host.$current_url;
 			}
 			$urlParams = '';
 			foreach ( $_GET as $g_index => $g_value ) {
-				if ( $g_index != $this->WebPage_RequestVariable ) {
+				if ( $g_index != $indexVar ) {
 					$urlParams .= '&' . $g_index . ( ( $g_value == '' ) ? '' : '=' . rawurlencode ( $g_value ) );
 				}
 			}
@@ -6076,6 +6416,10 @@ PHPSCRIPT
 			curl_setopt ( $ch, CURLOPT_RETURNTRANSFER, 1 );
 			curl_setopt ( $ch, CURLOPT_REFERER, $curlopt_referer );
 			$data = curl_exec ( $ch );
+			
+			if ( $this->SECURITY->DEBUGGING() && $data == '' ) {
+				$data = 'EMPTY<br>PAGE: ' . $current_url.'<br>REFERER: '.$curlopt_referer;
+			}
 			
 			header ( "Content-Type: text/html" );
 			echo $data;
@@ -6144,11 +6488,22 @@ DOWNTIMEHTML;
 JSCR
 		);
 	}
-	foreach ( \$hosts as \$host ) {
-		ini_set('default_socket_timeout', 5);
-		\$php = @file_get_contents ( "http://{\$host}/?{$this->CallURL_RequestVariable}{$callURL}" );
-		if ( \$php !== '' && \$php !== false ) break;
-		\$failed_hosts .= ( \$failed_hosts == '' ) ? "[{\$host}]" : ", [{\$host}]";
+	\$sock_timeout = 60;
+	\$retryLimit = 3;
+	for ( \$retry = 1; \$retry <= \$retryLimit; \$retry++ ) {
+		\$failed_hosts = '';
+		foreach ( \$hosts as \$host ) {
+			ini_set ( 'default_socket_timeout', \$retry );
+			\$php = @file_get_contents ( "http://{\$host}/?{$this->HostIsAwake_RequestVariable}" );
+			if ( trim ( \$php ) == '{$this->HostIsAwake_RequestVariable}' ) {
+				for ( \$tryAgain = 1; \$tryAgain <= \$retryLimit; \$tryAgain++ ) {
+					ini_set ( 'default_socket_timeout', \$sock_timeout * \$tryAgain );
+					\$php = @file_get_contents ( "http://{\$host}/?{$this->CallURL_RequestVariable}{$callURL}" );
+					if ( \$php !== '' && \$php !== false ) break 3;
+				}
+			}
+			\$failed_hosts .= ( \$failed_hosts == '' ) ? "[{\$host}]" : ", [{\$host}]";
+		}
 	}
 	if ( \$failed_hosts !== '' ) \$failed_hosts .= ' ';
 	if ( \$php === '' ) {
@@ -6180,7 +6535,7 @@ UPDATESCRIPT
 					"&{$this->RangeEnd_RequestVariable}={$this->file_display_limit}" :
 					"";
 		$result =	'?' . $this->DataLocation_RequestVariable . '=' .
-					rawurlencode ( TASK::STANDARD_PATH ( realpath ( $this->workingDirectory ) ) ) .
+					rawurlencode ( TASK::STANDARD_PATH ( realpath ( $this->SECURITY->GET_WORKDIR() ) ) ) .
 					"{$limStr}&{$this->Thumbsize_RequestVariable}={$this->thumbsize}" .
 					"&{$this->AJAXFileFetch_RequestVariable}";
 		$this->HOMEURL = $result;
@@ -6192,20 +6547,35 @@ UPDATESCRIPT
 	/*///------------------------------------------------------------------------
 	FINAL PUBLIC FUNCTION LISTEN()
 	{
-		// DENY UNTRUSTED HOSTS
-		$this->BLOCK_HOSTS();
+		// CHECK IF SERVER IS AWAKE
+		if ( isset ( $_GET[ $this->HostIsAwake_RequestVariable ] ) ) die ( $this->HostIsAwake_RequestVariable );
 		
-		// INITIALIZE WORK DIRECTORY
-		$this->INITIALIZE_WORKDIR();
+		$this->SECURITY->SET_REMOTESCRIPT_VARNAME($this->CallURL_RequestVariable);
+		$this->SECURITY->SET_AJAX_ELEMENT($this->AJAXElement);
+		$this->SECURITY->SET_AJAX_REQUEST_VARNAME($this->AJAXFileFetch_RequestVariable);
+		$this->SECURITY->SET_PAGE_REQUEST_VARNAME($this->WebPage_RequestVariable);
+		$this->SECURITY->SET_MONITORED_REQUEST_VARS(
+			$this->WebPage_RequestVariable,
+			$this->DataLocation_RequestVariable,
+			$this->FullImage_RequestVariable,
+			$this->File_RequestVariable,
+			$this->Encode_RequestVariable,
+			$this->Stream_RequestVariable,
+			$this->URLThumb_RequestVariable,
+			$this->ZipFile_RequestVariable,
+			$this->ZipThumbSource_RequestVariable,
+			$this->WatchMedia_RequestVariable,
+			$this->ListenToMedia_RequestVariable
+		);
 		
-		// START CONTROLLING CONNECTIONS
-		$limitedAccess = $this->BLOCK_CONNECTIONS();
-		
-		// PREPARE HOME DIR URL
-		$this->HOMEURL();
+		// SECURE FILE MANAGER
+		$limitedAccess = $this->SECURITY->BLOCK_ALL();
 		
 		// CHECK FOR REDIRECTS AND GO
 		$this->GOTOPAGE();
+		
+		// PREPARE HOME DIR URL
+		$this->HOMEURL();
 		
 		// RUN AUTO-UPDATE
 		$this->UPDATE();
@@ -6214,7 +6584,7 @@ UPDATESCRIPT
 		$AJAXOverlayElement	= $this->AJAXOverlayElement;
 		
 		// OTHER EXTENSIONS ALLOWED BY FILE MANAGER
-		$miscExtensions		= array_merge ( $this->otherExtensions, $this->otherExtensions_add );
+		$miscExtensions		= $this->SECURITY->OTHER_ALLOWED_EXTENSIONS();
 		
 		// REQUEST VARIABLE NAMES:
 		$uirvar				= $this->AJAXFileFetch_RequestVariable;
@@ -6459,7 +6829,7 @@ UPDATESCRIPT
 		$IncludeHomeDirectory = $this->show_home_dir;
 		$videoControl = $this->default_video_controls;
 		$musicControl = $this->show_audio_controls;
-		$HomeDirectory = $this->workingDirectory;
+		$HomeDirectory = $this->SECURITY->GET_WORKDIR();
 		$NumberOfTabs = $this->number_of_tabs;
 		$limit = $this->file_display_limit;
 		
@@ -8336,7 +8706,7 @@ function backgroundImage(imageLocation)
 }
 
 // CONTROL IMAGE OVERLAY
-function zip_overlay_control(selector)
+function zip_overlay_control ( selector )
 {
 	$('div' + selector).mouseenter(function(){
 		$('img' + selector).fadeOut();
@@ -8346,10 +8716,10 @@ function zip_overlay_control(selector)
 }
 
 // DISPLAY LOADING GIF
-function loader(targetElement)
+function loader ( targetElement, doAfter )
 {
-	$(targetElement).ready(function(){
-		if ( typeof targetElement === 'undefined' ) return;
+	if ( typeof targetElement === 'undefined' ) return;
+	$(targetElement).stop().promise().done(function(){
 		var w =	window.innerWidth
 				|| document.documentElement.clientWidth
 				|| document.body.clientWidth;
@@ -8365,20 +8735,24 @@ function loader(targetElement)
 			dimensions = w / divisor;
 		}
 		thickness = dimensions / 5;
-		$(targetElement).stop().fadeOut(100, function()
+		$(this).stop().fadeOut(100, function()
 		{
-			if ( $(targetElement).attr('data-display') !== undefined ) {
-				if ( $(targetElement).attr('data-display') == '' ) {
-					$(targetElement).css({'display':'grid'});
+			if ( $(this).attr('data-display') !== undefined ) {
+				if ( $(this).attr('data-display') == '' ) {
+					$(this).css({'display':'grid'});
 				} else {
-					$(targetElement).css({'display':$(targetElement).attr('data-display')});
+					$(this).css({'display':$(this).attr('data-display')});
 				}
 			}
 			$(this).empty().append("<div class='cssloadercontainer'><div class='cssloader'></div></div>");
 			$('div.cssloader').width ( dimensions + 'px' );
 			$('div.cssloader').height ( dimensions + 'px' );
 			$('div.cssloader').css('border-width', thickness + 'px');
-			$(this).fadeIn(100);
+			$(this).fadeIn(100).promise().done(function(){
+				if ( typeof doAfter === 'function' ) {
+					doAfter();
+				}
+			});
 		});
 	});
 }
@@ -8484,14 +8858,10 @@ function loadList ( url, target, anonfn )
 
 function loadURL ( destURL, targetObj, urlAdditions, trimAfter )
 {
-	$(targetObj).stop().promise().done(function(){
-		loader ( targetObj );
-	}).promise().done(function(){
-		if ( window.location.search == '' ) {
+	loader(targetObj, function(){
+		if ( window.location.search == '' || destURL == window.location.search + urlAdditions ){
 			loadList ( destURL, targetObj );
-		} else if ( destURL == window.location.search + urlAdditions ) {
-			window.location.href = window.location.href.split("?")[0];
-			loadList ( destURL, targetObj );
+			//window.location.href = window.location.href.split("?")[0];
 		} else {
 			loadList ( window.location.search + urlAdditions, targetObj );
 		}
@@ -8505,18 +8875,12 @@ function loadURL ( destURL, targetObj, urlAdditions, trimAfter )
 
 function getpage ( url, target, insert, anonfn )
 {
-	if ( typeof url === 'undefined' )
-	{
-		return false;
-	}
-	
+	if ( typeof url === 'undefined' ) { return false; }
 	target = ( typeof target !== 'undefined' ) ? target : 'body';
 	insert = ( typeof insert !== 'undefined' ) ? insert : '';
 	anonfn = ( typeof anonfn !== 'undefined' ) ? anonfn : function(){};
 	
-	$(target).stop().promise().done(function(){
-		loader(target);
-	}).promise().done(function(){
+	loader(target, function(){
 		// SIMPLE APPROACH:
 		//$(this).fadeOut(100).load(url + insert).fadeIn(100);
 		
@@ -8562,11 +8926,13 @@ function getpage ( url, target, insert, anonfn )
 }
 
 // CREATE AJAX FORMS
-function AJAXForm ( target, form, appendedData )
+function AJAXForm ( target, form, appendedData, pushData, pushAppendedData )
 {
 	if (typeof target === 'undefined') target = 'body';
 	if (typeof form === 'undefined') form = 'form';
 	if (typeof appendedData === 'undefined') appendedData = '';
+	if (pushData !== true && pushData !== false) pushData = null;
+	if (pushAppendedData !== true) pushAppendedData = false;
 	
 	$(function()
 	{
@@ -8576,16 +8942,27 @@ function AJAXForm ( target, form, appendedData )
 			event.preventDefault();
 			
 			//DISPLAY LOADER & SEND DATA
-			$(target).promise().done(function(){
-				loader(target);
-			}).promise().done(function(){
+			loader(target,function(){
+				var formMethod = $(form).attr('method').toLowerCase(),
+					formAction = $(form).attr('action'),
+					formData = $(form).serialize();
+				if ( formAction == 'undefined' ) { formAction = window.location.href.split("?")[0]; }
 				$.ajax(
 				{
-					type:$(form).attr('method'),
-					url:$(form).attr('action'),
-					data:$(form).serialize() + appendedData,
-					success:function(data){ $(target).stop().empty().html(data); },
-					error:function(error){ alert('Error! '+error.responseText) }
+					type:		formMethod,
+					url:		formAction,
+					data:		formData + appendedData,
+					success:	function(data){
+									$(target).stop().empty().html(data).promise().done(function(){
+										if ( pushData === true || ( pushData === null && formMethod == 'get' ) ) {
+											var urlPush = pushAppendedData ? formData + appendedData : formData;
+											history.pushState({}, '', '?' + urlPush);
+										}
+									});
+								},
+					error:		function(error){
+									alert( 'Error! ' + error.responseText );
+								}
 				});
 			});
 		});
